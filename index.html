@@ -621,6 +621,7 @@ function nowTips(n,u){
   if(isZone(w) && c.pos==="set" && k==="trap") out.push(c.placedTurn===P.turn? "You Set it this turn, so it can’t be activated until your next turn." : "It’s ready. Hold it to activate it.");
   if(isMonZone(w)){ if(c.placedTurn===P.turn) out.push("It was put on the field this turn, so its battle position can’t change yet.");
     else out.push("Double-tap it to change its battle position."); }
+  if(w==="deck"){ const ok=["hand","gy","field"].filter(dst=>!deckCheck(u,dst).err); out.push(ok.length? `An effect you used lets you take this card: ${ok.map(x=>DEST_WORD[x]).join(" or ")}.` : "No effect you’ve used right now lets this card leave your Deck."); }
   if(["gy","ban","deck"].includes(w)) out.push("Drag it out of the pile onto the field or your hand when a card effect lets you."+(w==="gy"?" Hold it to use an effect it has in the GY.":""));
   const used=P.used[n]||0; if(used) out.push(`You’ve already used ${n}’s effect${used>1?"s":""} this turn.`);
   return out;
@@ -664,13 +665,14 @@ function pstat(){
   document.getElementById("stepk").textContent=`Free play · Turn ${P.turn}`;
   let s = P.normalUsed ? "Normal Summon: used this turn" : "Normal Summon: available";
   if(P.lock) s += ` · Extra Deck: ${P.lock.text} only`;
+  const gtx=grantText(); if(gtx) s += ` · Waiting: ${gtx}`;
   document.getElementById("pstat").textContent=s;
   document.getElementById("pBan").textContent=`Banished (${Object.values(P.cards).filter(c=>c.where==="ban").length})`;
 }
 
 function newGame(){
   for(const u in pEls){ pEls[u].remove(); delete pEls[u]; }
-  Object.assign(P,{cards:{},deck:[],t:0,turn:1,normalUsed:false,used:{},lock:null,sel:null}); hist=[]; lastState=null;
+  Object.assign(P,{cards:{},deck:[],t:0,turn:1,normalUsed:false,used:{},lock:null,sel:null,grants:[]}); hist=[]; lastState=null; P.grants=[];
   let id=0; const mk=(n,w)=>{ const u="p"+(id++); P.cards[u]={n,where:w,t:0}; return u; };
   const main=[]; ["Monsters","Spells","Traps"].forEach(s=>DECK[s].forEach(([q,n])=>{ for(let i=0;i<q;i++) main.push(mk(n,"deck")); }));
   DECK["Extra Deck"].forEach(([q,n])=>{ for(let i=0;i<q;i++) mk(n,"extra"); });
@@ -773,9 +775,61 @@ function renderPlay(animate=true){
 }
 
 
+
+// ---- Deck permissions: a card only leaves the Deck when an effect says it can ----
+const DEST_WORD={hand:"add to your hand",gy:"send to the GY",field:"Special Summon"};
+function parseGrants(n){
+  const d=info(n); if(!d||!d.desc) return [];
+  const out=[];
+  d.desc.split(/[.;]/).forEach(cl=>{
+    const m=/\b(add|send|Special Summon)\s+(?:up to\s+)?(\d+)\s+(.+?)\s+from your ([^,]*?\bDeck\b[^,]*?)(?:\s+to (?:your hand|the GY)|\s+in\b|,|$)/i.exec(cl);
+    if(!m) return;
+    const verb=m[1].toLowerCase(), ex=/except "([^"]+)"/i.exec(cl);
+    out.push({src:n, dest: verb==="add"?"hand":verb==="send"?"gy":"field", left:+m[2], phrase:m[3].trim(), except: ex?ex[1]:null});
+  });
+  return out;
+}
+function grantFrom(n){
+  const g=parseGrants(n); if(!g.length) return "";
+  P.grants=(P.grants||[]).filter(x=>x.src!==n).concat(g);
+  const F={hand:(c,p)=>`add ${c} ${p} from your Deck to your hand`,gy:(c,p)=>`send ${c} ${p} from your Deck to the GY`,field:(c,p)=>`Special Summon ${c} ${p} from your Deck`};
+  return " "+g.map(x=>`You can now ${F[x.dest](x.left,x.phrase)}${x.except?`, except ${x.except}`:""}.`).join(" ");
+}
+function fitsPhrase(cand,phrase){
+  const d=info(cand); if(!d) return true;
+  const p=phrase, lc=p.toLowerCase(), k=KIND[cand], mon=isMonKind(cand);
+  const firstQ=(/"([^"]+)"/.exec(p)||[])[1];
+  const alts=p.split(/\s+or\s+(?=1\s|")/i).map(a=>a.replace(/^1\s+/,""));
+  return alts.some(a=>{
+    const al=a.toLowerCase(), q=(/"([^"]+)"/.exec(a)||[])[1];
+    if(/mentions/.test(al)){ const tgt=q || firstQ; if(tgt && !(d.desc||"").includes(tgt)) return false; }
+    else if(q){ if(!(cand===q || (/monster|card/.test(al) && cand.includes(q)))) return false; }
+    if(/spell\/trap/.test(al)){ if(k!=="spell"&&k!=="trap") return false; }
+    else if(/\bspell\b/.test(al)){ if(k!=="spell") return false; }
+    else if(/\btrap\b/.test(al)){ if(k!=="trap") return false; }
+    else if(/monster|tuner/.test(al) && !mon) return false;
+    if(/normal trap/.test(al) && d.race!=="Normal") return false;
+    if(/\btuner\b/.test(al) && !/Tuner/.test(d.type)) return false;
+    const lv=/level (\d+) or (lower|higher)/.exec(al);
+    if(lv){ if(d.level==null) return false; if(lv[2]==="lower"? d.level>+lv[1] : d.level<+lv[1]) return false; }
+    for(const r of ["Fiend","Dragon","Warrior","Spellcaster","Machine","Zombie","Pyro"]) if(new RegExp("\\b"+r+"\\b").test(a.replace(/"[^"]*"/g,"")) && mon && d.race!==r) return false;
+    for(const at of ["DARK","LIGHT","FIRE","WATER","EARTH","WIND"]) if(new RegExp("\\b"+at+"\\b").test(a) && d.attribute!==at) return false;
+    return true;
+  });
+}
+function deckCheck(u,dest){
+  const n=P.cards[u].n, gs=(P.grants||[]).filter(g=>g.dest===dest);
+  const verb={hand:"add a card from your Deck to your hand",gy:"send a card from your Deck to the GY",field:"Special Summon from your Deck",ban:"banish a card from your Deck"}[dest];
+  if(!gs.length) return { err:`No card effect is letting you ${verb} right now. Use a card’s effect first by holding it, and it will tell you what you can take.` };
+  const g=gs.find(g=>g.except!==n && fitsPhrase(n,g.phrase));
+  if(!g){ const x=gs[0]; return { err: x.except===n ? `${x.src}’s effect can’t take ${n}. It says “except ${n}”.` : `${x.src}’s effect only lets you ${DEST_WORD[x.dest]} ${x.left} ${x.phrase}. ${n} doesn’t fit that.` }; }
+  return {g};
+}
+function grantText(){ return (P.grants||[]).map(g=>`${g.src}: ${DEST_WORD[g.dest]} ${g.left} ${g.phrase} from Deck`).join(" · "); }
+
 // ---- Undo: every change to the duel is saved as one step ----
 let hist=[], lastState=null, restoring=false;
-function ser(){ return JSON.stringify({cards:P.cards,deck:P.deck,t:P.t,turn:P.turn,normalUsed:P.normalUsed,used:P.used,lock:P.lock,dm:dropMode}); }
+function ser(){ return JSON.stringify({cards:P.cards,deck:P.deck,t:P.t,turn:P.turn,normalUsed:P.normalUsed,used:P.used,lock:P.lock,grants:P.grants||[],dm:dropMode}); }
 function track(){
   if(restoring) return; const j=ser();
   if(lastState!==null && j!==lastState){ hist.push({s:lastState,cap:document.getElementById("cap").textContent}); if(hist.length>300) hist.shift(); }
@@ -784,7 +838,7 @@ function track(){
 function undo(){
   if(P.sel) endSelect();
   const h=hist.pop(); if(!h) return no("Nothing to undo yet.");
-  const o=JSON.parse(h.s); Object.assign(P,{cards:o.cards,deck:o.deck,t:o.t,turn:o.turn,normalUsed:o.normalUsed,used:o.used,lock:o.lock});
+  const o=JSON.parse(h.s); Object.assign(P,{cards:o.cards,deck:o.deck,t:o.t,turn:o.turn,normalUsed:o.normalUsed,used:o.used,lock:o.lock,grants:o.grants||[]});
   setDropMode(o.dm||"normal"); lastState=h.s;
   restoring=true; renderPlay(); restoring=false;
   document.getElementById("pUndo").disabled=!hist.length;
@@ -925,7 +979,8 @@ function tryActivate(u,zone){
     if(st==="Field"){ const old=occ("field"); if(old) place(old,"gy"); place(u,"field",{pos:"up",placedTurn:P.turn}); }
     else place(u,zone||freeSZ(),{pos:"up",placedTurn:P.turn});
     resolveLater(u);
-    say(`Activated ${c.n}. Apply its effect by moving the cards yourself.${["Normal","Quick-Play","Ritual"].includes(st)?" It goes to the GY once it resolves.":""}`);
+    const gt=grantFrom(c.n);
+    say(`Activated ${c.n}. Apply its effect by moving the cards yourself.${["Normal","Quick-Play","Ritual"].includes(st)?" It goes to the GY once it resolves.":""}${gt}`);
     renderPlay();
   });
 }
@@ -945,7 +1000,7 @@ function activateSet(u){
   const c=P.cards[u], st=subType(c.n)||"Normal", trap=KIND[c.n]==="trap";
   if(trap && c.placedTurn===P.turn) return no("You can’t activate a Trap the same turn you Set it.");
   if(!trap && st==="Quick-Play" && c.placedTurn===P.turn) return no("You can’t activate a Quick-Play Spell the same turn you Set it.");
-  optCheck(c.n,()=>{ c.pos="up"; resolveLater(u); say(`Activated ${c.n}. Apply its effect by moving the cards yourself.`); renderPlay(); });
+  optCheck(c.n,()=>{ c.pos="up"; resolveLater(u); const gt=grantFrom(c.n); say(`Activated ${c.n}. Apply its effect by moving the cards yourself.${gt}`); renderPlay(); });
 }
 
 // ---- Effects and other actions ----
@@ -957,7 +1012,8 @@ function useEffect(u){
     if(m && isZone(c.where)){ P.lock={src:c.n,text:m[1].trim(),words:m[1].trim().split(/\s+/)}; extra=` From now on this turn you can only Special Summon ${P.lock.text} monsters from the Extra Deck.`; }
     const el=pEls[u]; if(isZone(c.where)||c.where==="hand"){ el.classList.add("act"); setTimeout(()=>el.classList.remove("act"),1500); }
     const from={hand:" from your hand",gy:" from the GY",ban:" while banished"}[c.where]||"";
-    say(`Used ${c.n}’s effect${from}. Move the cards it affects yourself.${extra}`); renderPlay();
+    const gt=grantFrom(c.n);
+    say(`Used ${c.n}’s effect${from}. Move the cards it affects yourself.${extra}${gt}`); renderPlay();
   });
 }
 function changePos(u){
@@ -980,6 +1036,18 @@ document.querySelectorAll("#dmode button").forEach(b=>b.onclick=()=>setDropMode(
 function setDropMode(m){ dropMode=m; document.querySelectorAll("#dmode button").forEach(b=>b.classList.toggle("on",b.dataset.m===m)); }
 const FROM={hand:"from your hand",gy:"from your GY",deck:"from your Deck",extra:"from your Extra Deck",ban:"from banishment"};
 function dropAt(u,x,y,ban){
+  const c0=P.cards[u];
+  if(c0.where==="deck"){
+    const k=ban?"ban":zoneAt(x,y), inHand=!ban && y>G.boardH;
+    const dest= inHand?"hand" : k==="gy"?"gy" : k==="ban"?"ban" : (k && isZone(k))?"field" : null;
+    if(dest){ const r=deckCheck(u,dest); if(r.err) return no(r.err);
+      const res=dropInner(u,x,y,ban);
+      if(P.cards[u].where!=="deck"){ r.g.left--; if(r.g.left<=0) P.grants.splice(P.grants.indexOf(r.g),1); renderPlay(); }
+      return res; }
+  }
+  return dropInner(u,x,y,ban);
+}
+function dropInner(u,x,y,ban){
   const c=P.cards[u], n=c.n, w=c.where, ex=KIND[n]==="extra", mon=isMonKind(n);
   const k=ban?"ban":zoneAt(x,y), inHand=!ban && y>G.boardH, from=isZone(w)?"":" "+(FROM[w]||"");
   if(inHand){
@@ -1064,7 +1132,7 @@ document.getElementById("pNext").onclick=()=>{
   if(P.sel) return no("Finish picking cards first, or tap Cancel.");
   const h=Object.values(P.cards).filter(c=>c.where==="hand").length;
   if(h>6) return no(`You have ${h} cards in hand. Discard down to 6 before ending your turn.`);
-  P.turn++; P.normalUsed=false; P.used={}; P.lock=null; setDropMode("normal");
+  P.turn++; P.normalUsed=false; P.used={}; P.lock=null; P.grants=[]; setDropMode("normal");
   if(!P.deck.length){ say(`Turn ${P.turn}. Your Deck is empty, so you can’t draw. In a real duel, you’d lose here.`); return renderPlay(); }
   const u=P.deck[P.deck.length-1]; place(u,"hand");
   say(`Turn ${P.turn}. You drew ${P.cards[u].n}. Your Normal Summon and once-per-turn effects are available again.`);
