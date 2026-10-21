@@ -118,8 +118,8 @@ select{font-family:var(--ui);font-size:15px;background:rgba(20,4,10,.7);color:va
   .mbox h3{font-size:19px}.mbox .role{font-size:15px}.mbox .desc{font-size:14px}}
 .pview{max-width:760px;width:100%;max-height:min(70vh,600px);background:linear-gradient(180deg,#2a0a10,#170509);border:1px solid var(--gold);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
 .pview h3{font-family:var(--display);color:var(--gold);margin:0;font-size:17px}
-.pview .pg{overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;min-height:0}
-.pview .pc{position:relative;aspect-ratio:59/86;border-radius:4px;overflow:hidden;background:#3a1a10;cursor:pointer;font-size:10px;color:var(--mute);display:flex;align-items:center;justify-content:center;text-align:center;padding:2px}
+.pview .pg{overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(54px,1fr));gap:6px;min-height:0}
+.pview .pc{touch-action:none;position:relative;aspect-ratio:59/86;border-radius:4px;overflow:hidden;background:#3a1a10;cursor:pointer;font-size:10px;color:var(--mute);display:flex;align-items:center;justify-content:center;text-align:center;padding:2px}
 .pview .pc img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .pview .pc .q{position:absolute;right:2px;bottom:2px;background:var(--deep);color:var(--gold);border:1px solid var(--gold);border-radius:4px;font-size:11px;padding:0 4px;z-index:1}
 .pview .empty{color:var(--mute);font-size:14px}
@@ -137,6 +137,16 @@ header{flex-wrap:wrap}
 .selbar{background:rgba(226,178,90,.12);border:1px solid var(--gold);border-radius:10px;padding:10px 12px;display:grid;gap:8px}
 .selbar p{margin:0;font-size:15px}
 .pstat{font-size:14px;color:var(--mute)}
+#pUndo:disabled{opacity:.4}
+.dmode{display:flex;gap:6px;flex-wrap:wrap;align-items:center;font-size:13px;color:var(--mute)}
+.dmode button{padding:6px 9px;font-size:13px}
+.dmode button.on{background:var(--gold);color:#1a0508;border-color:var(--gold)}
+.mbtns{display:flex;gap:8px;flex:none}.mbtns button{flex:1;padding:9px}
+#mCoach.on{background:rgba(226,178,90,.18)}
+.coach h4{font-family:var(--display);color:var(--gold);margin:4px 0 2px;font-size:13px;font-weight:500;letter-spacing:.04em}
+.coach ul{margin:0;padding-left:18px;font-size:13px;line-height:1.4;display:grid;gap:4px}
+.coach .now li{color:#ffd9a0}.coach .dont li::marker{color:#ff8a7a}
+.lvrow{display:flex;gap:6px;align-items:center;font-size:13px;color:var(--mute)}.lvrow button{padding:4px 10px}
 .sheet{max-width:420px;width:100%;max-height:82vh;overflow:auto;background:linear-gradient(180deg,#2a0a10,#170509);border:1px solid var(--gold);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:7px}
 .sheet .hd{display:flex;gap:10px;align-items:center;margin-bottom:2px}
 .sheet .hd img{width:52px;border-radius:3px}
@@ -188,8 +198,10 @@ header{flex-wrap:wrap}
       <div id="playCtrls" style="display:none" class="panel">
         <div id="selBar" class="selbar" style="display:none"><p id="selT"></p>
           <div class="ctrls"><button id="selOk" class="primary">Confirm</button><button id="selNo">Cancel</button></div></div>
+        <div class="ctrls"><button id="pNext" class="primary">End turn</button><button id="pUndo" disabled>↶ Undo</button><button id="pBan">Banished (0)</button><button id="pNew">New duel</button></div>
         <div class="pstat" id="pstat"></div>
-        <div class="ctrls"><button id="pNext" class="primary">End turn</button><button id="pBan">Banished (0)</button><button id="pNew">New duel</button></div>
+        <div class="dmode" id="dmode">Play cards as:
+          <button data-m="normal" class="on">Normal Summon</button><button data-m="set">Set</button><button data-m="spa">Special ATK</button><button data-m="spd">Special DEF</button></div>
       </div>
       <p id="hint" style="font-size:14px;color:var(--mute);margin:0">Tap any card on the field or in your hand to see its art and full text.</p>
     </div>
@@ -492,7 +504,7 @@ function setMode(m){
   document.getElementById("watchCtrls").style.display = m==="watch" ? "" : "none";
   document.getElementById("practice").style.display = m==="practice" ? "" : "none";
   document.getElementById("playCtrls").style.display = m==="play" ? "" : "none";
-  document.getElementById("hint").textContent = m==="play" ? "Drag cards from your hand onto the field, or tap a card for options. Tap or long-press your GY, Deck, or Extra Deck to see and use the cards in it." : "Tap any card on the field or in your hand to see its art and full text. Long-press your GY, Deck, or Extra Deck to see the cards in it.";
+  document.getElementById("hint").textContent = m==="play" ? "Tap a card for its details and tips. Drag cards to play them, just like a real table. Hold a card to use its effect or activate a Set card. Double-tap a monster to change its position. Undo takes back one action each time you press it. Tap your GY, Deck, or Extra Deck to open it, then drag cards out. Drop a card on Banished to banish it." : "Tap any card on the field or in your hand to see its art and full text. Long-press your GY, Deck, or Extra Deck to see the cards in it.";
   for(const id in cardEls) cardEls[id].style.display = m==="play" ? "none" : "";
   for(const u in pEls) if(m!=="play") pEls[u].style.display="none";
   document.getElementById("cap").className="";
@@ -521,17 +533,103 @@ function buildDeck(){
 }
 
 const modal=document.getElementById("modal");
-function openCard(n){
+function openCard(n,u){
   const d=DB[n]||{}; const box=document.getElementById("mbox"); box.className="mbox";
-  box.innerHTML = (d.img?`<img src="${d.img}" alt="${n}">`:`<div></div>`) +
-    `<div class="mtext"><div class="mscroll"><h3>${n}</h3>` + (ROLE[n]?`<div class="role">${ROLE[n]}</div>`:"") +
-    `<div class="desc">${d.desc ? d.desc.replace(/</g,"&lt;") : "Card text loads when you’re online."}</div></div>` +
-    `<button id="mClose">Close</button></div>`;
+  const c = u!=null && P.cards ? P.cards[u] : null;
+  const lvRow = c && isMonZone(c.where) && c.pos!=="set" && lvl(u)!=null ?
+    `<div class="lvrow">Level ★${lvl(u)}<button id="lvDn">−1</button><button id="lvUp">+1</button><span>for effects that change Levels</span></div>` : "";
+  const textHTML = (ROLE[n]?`<div class="role">${ROLE[n]}</div>`:"") +
+    `<div class="desc">${d.desc ? d.desc.replace(/</g,"&lt;") : "Card text loads when you’re online."}</div>`;
+  box.innerHTML = (d.img?`<img src="${d.img}" alt="${esc(n)}">`:`<div></div>`) +
+    `<div class="mtext"><div class="mscroll"><h3>${esc(n)}</h3>${lvRow}<div id="mBody">${textHTML}</div></div>` +
+    `<div class="mbtns"><button id="mCoach">💡 How to play it</button><button id="mClose">Close</button></div></div>`;
+  let coach=false; const body=document.getElementById("mBody"), cb=document.getElementById("mCoach");
+  cb.onclick=()=>{ coach=!coach; body.innerHTML = coach? coachHTML(n,u) : textHTML; cb.textContent = coach? "📜 Card text" : "💡 How to play it"; cb.classList.toggle("on",coach); box.querySelector(".mscroll").scrollTop=0; };
+  if(lvRow){ const bump=k=>{ c.lvMod=(c.lvMod||0)+k; renderPlay(); say(`${n} is now Level ${lvl(u)}.`); openCard(n,u); };
+    document.getElementById("lvDn").onclick=()=>bump(-1); document.getElementById("lvUp").onclick=()=>bump(1); }
   document.getElementById("mClose").onclick=closeCard;
   modal.classList.add("on");
 }
 function closeCard(){ modal.classList.remove("on"); }
 modal.addEventListener("click",e=>{ if(e.target===modal) closeCard(); });
+
+
+// ===== Coach tips: what to do and what not to do =====
+const TIPS = {
+ "Soul Resonator":{do:["Normal Summon it as your first play. Its effect adds a Fiend from your Deck, and Bone Archfiend is almost always the pick.","Let it end up in the GY. From there it can protect your cards from being destroyed, including from Red Dragon Archfiend’s own end-of-turn effect."],
+   dont:["Don’t spend your Normal Summon on anything else first. You get one per turn and this card needs it.","After using its effect, don’t try to Special Summon anything from the Extra Deck that isn’t a DARK Synchro. The game won’t let you."]},
+ "Bone Archfiend":{do:["Special Summon it from your hand with its own effect after Soul Resonator adds it.","Use it to lower a monster’s Level by 1 and send a Tuner from your Deck to the GY. Crimson Resonator is the usual choice so Red Rising Dragon can revive it."],
+   dont:["Don’t Normal Summon it. It summons itself, and your Normal Summon belongs to Soul Resonator.","If you have to discard, don’t throw away Soul Resonator. Crimson Resonator is the best discard because it wants to be in the GY anyway."]},
+ "Resonator Call":{do:["Activate it before you Normal Summon. Search Soul Resonator if it isn’t already in your hand."],
+   dont:["Don’t search a Resonator you already hold when Soul is missing. Soul is what starts the combo."]},
+ "Crimson Gaia":{do:["Activate it first. Search Soul Resonator if you don’t have it.","If Soul is already in your hand, search Red Zone instead so your end board is ready."],
+   dont:["Don’t save it for later. It’s a starter, so it does its job at the very start of your turn."]},
+ "Crimson Resonator":{do:["Get it into the GY with Bone Archfiend, then bring it back with Red Rising Dragon.","Use its effect when your only other monster is a single DARK Dragon Synchro. It then Special Summons 2 Resonators from your hand or Deck."],
+   dont:["Don’t try its effect while you control other monsters besides that one Synchro. The condition fails.","Don’t worry about discarding it. It’s the best card to send to the GY."]},
+ "Synkron Resonator":{do:["Special Summon it with its own effect and use it as Synchro Material.","When it goes from the field to the GY, add another Resonator from your GY to your hand. Vision Resonator is a strong pick."],
+   dont:["Don’t discard it from your hand expecting its effect. It only triggers when it goes from the field to the GY."]},
+ "Vision Resonator":{do:["Special Summon it with its own effect, then use it as Synchro Material.","When it hits the GY, search Red Zone. If Red Zone is already in your hand, take Absolute Powerforce."],
+   dont:["Don’t Normal Summon it if you still need your Normal Summon for Soul Resonator."]},
+ "Red Resonator":{do:["Use it as a Tuner. Its effect brings out a low-Level monster from your hand to set up a Synchro."],
+   dont:["Don’t use it if you have no low-Level monster in hand to bring out. Check your hand first."]},
+ "Creation Resonator":{do:["Special Summon it while you control a big Synchro monster, then use it as an extra Tuner."],
+   dont:["Don’t try to summon it before you have a Synchro on the field. Its condition won’t be met."]},
+ "Red Lotus King, Flame Crime":{do:["Treat it as backup. It’s best when your main combo gets stopped or you don’t draw a starter.","Read its card text for the exact conditions before you use it."],
+   dont:["Don’t lead with it when you have Soul Resonator. The Soul line is stronger."]},
+ "Wandering King Wildwind":{do:["Use it as a non-Tuner body alongside a Tuner for Synchro Summons."],
+   dont:["Don’t count it as a Tuner. Every Synchro here needs a real Tuner too."]},
+ "Red Rising Dragon":{do:["Synchro Summon it when your monsters add up to Level 6.","When it’s Synchro Summoned, revive a Resonator from your GY. Crimson Resonator is the one you want."],
+   dont:["Don’t summon it with an empty GY. Make sure a Resonator is already there so its effect does something."]},
+ "Scarred Dragon Archfiend":{do:["Synchro Summon it at Level 8. It counts as Red Dragon Archfiend for card effects like Red Zone.","When it leaves the field, Special Summon Red Dragon Archfiend from your Extra Deck."],
+   dont:["Don’t forget its leave-the-field effect after you use it as material."]},
+ "Red Dragon Archfiend":{do:["Use it as material for Red Nova Dragon, or keep Soul Resonator in the GY to protect your board."],
+   dont:["Don’t leave it next to other monsters at the end of turn 1 without protection. It destroys your monsters that didn’t attack, and you can’t attack on turn 1."]},
+ "Hot Red Dragon Archfiend Abyss":{do:["Keep it on your end board. Its effect negates a card your opponent controls on the field."],
+   dont:["Don’t fire it at the first thing your opponent plays. Save it for the card that actually threatens you."]},
+ "Hot Red Dragon Archfiend Bane":{do:["Use it for comebacks. It Tributes a monster to revive a Red Dragon Archfiend monster from your GY."],
+   dont:["Don’t take it over Abyss on a normal turn-1 board. Abyss’s negate usually matters more."]},
+ "Red Nova Dragon":{do:["Make it with 2 Tuners plus Red Dragon Archfiend. It gains ATK for each Tuner in your GY, so filling the GY helps."],
+   dont:["Don’t use 1 or 3 Tuners. It needs exactly 2, and the non-Tuner must be Red Dragon Archfiend."]},
+ "Kuibelt the Blade Dragon":{do:["Use it as a Level 7 bail-out if your combo gets stopped partway through."],
+   dont:["Don’t make it when your full combo is still possible. It’s a fallback, not the goal."]},
+ "Red Zone":{do:["Set it on your turn so it’s ready for your opponent’s turn.","Keep a Red Dragon Archfiend monster on the field. Scarred Dragon Archfiend counts."],
+   dont:["Don’t expect it to work without a Red Dragon Archfiend monster out.","Don’t try to activate it the same turn you Set it."]},
+ "Red Reign":{do:["Set it and use it as a board wipe on your opponent’s turn. Your remaining monsters are protected."],
+   dont:["Don’t activate it the turn you Set it. Traps have to wait a turn."]},
+ "Absolute Powerforce":{do:["Grab it with Vision Resonator when Red Zone is already in your hand."],
+   dont:["Don’t use it without a Red Dragon Archfiend monster around. It’s built to support one."]},
+ "Resonator Command":{do:["Read its text and use it to get more Resonators going when you’re short on pieces."],
+   dont:["Don’t activate it before you know which Resonator you need. Plan the combo first."]},
+ "Fiendish Chain":{do:["Set it and use it on your opponent’s turn to negate a monster’s effects and stop it from attacking."],
+   dont:["Don’t waste it on a monster that has already used its effect. Hit the one about to do something."]},
+ "Fiendish Golem":{do:["Set it as extra interaction for your opponent’s turn."],
+   dont:["Don’t activate it the same turn you Set it."]}
+};
+function nowTips(n,u){
+  const out=[]; if(u==null || !P.cards || !P.cards[u]) return out;
+  const c=P.cards[u], k=KIND[n], w=c.where, d=info(n);
+  if(w==="hand" && k==="mon"){
+    const L=d&&d.level; if(L>=7) out.push(`It’s Level ${L}, so a Normal Summon needs 2 Tributes.`); else if(L>=5) out.push(`It’s Level ${L}, so a Normal Summon needs 1 Tribute.`);
+    out.push(P.normalUsed? "You’ve already used your Normal Summon this turn. To play it now, you need a card effect that Special Summons it." : "Your Normal Summon is still available this turn.");
+    out.push("Pick Normal Summon, Set, or Special below the field, then drag it onto a Monster Zone.");
+  }
+  if(w==="hand" && k==="spell") out.push("Drag it onto a Spell & Trap Zone to activate it, or choose Set below the field first to Set it face-down."+(subType(n)==="Field"?" Field Spells go in the Field Zone.":""));
+  if(w==="hand" && k==="trap") out.push("Drag it onto a Spell & Trap Zone to Set it. You can activate it starting next turn.");
+  if(w==="extra"){ const req=d? d.desc.split("\n")[0] : ""; if(req) out.push(`Materials: ${req}`);
+    if(P.lock && !matchWords(n,P.lock.words)) out.push(`Locked out: after ${P.lock.src}, you can only Special Summon ${P.lock.text} monsters from the Extra Deck this turn.`);
+    out.push("Open your Extra Deck and drag it onto a Monster Zone, then tap the materials and Confirm."); }
+  if(isZone(w) && c.pos==="set" && k==="trap") out.push(c.placedTurn===P.turn? "You Set it this turn, so it can’t be activated until your next turn." : "It’s ready. Hold it to activate it.");
+  if(isMonZone(w)){ if(c.placedTurn===P.turn) out.push("It was put on the field this turn, so its battle position can’t change yet.");
+    else out.push("Double-tap it to change its battle position."); }
+  if(["gy","ban","deck"].includes(w)) out.push("Drag it out of the pile onto the field or your hand when a card effect lets you."+(w==="gy"?" Hold it to use an effect it has in the GY.":""));
+  const used=P.used[n]||0; if(used) out.push(`You’ve already used ${n}’s effect${used>1?"s":""} this turn.`);
+  return out;
+}
+function coachHTML(n,u){
+  const t=TIPS[n]||{do:[],dont:[]}, now=nowTips(n,u), li=a=>a.map(x=>`<li>${esc(x)}</li>`).join("");
+  return `<div class="coach">${now.length?`<h4>Right now</h4><ul class="now">${li(now)}</ul>`:""}`+
+    `<h4>What to do</h4><ul>${li(t.do)}</ul><h4>What not to do</h4><ul class="dont">${li(t.dont)}</ul></div>`;
+}
 
 // ===== Free play: drag and drop with rule checks =====
 const P = {};
@@ -572,15 +670,15 @@ function pstat(){
 
 function newGame(){
   for(const u in pEls){ pEls[u].remove(); delete pEls[u]; }
-  Object.assign(P,{cards:{},deck:[],t:0,turn:1,normalUsed:false,used:{},lock:null,sel:null});
+  Object.assign(P,{cards:{},deck:[],t:0,turn:1,normalUsed:false,used:{},lock:null,sel:null}); hist=[]; lastState=null;
   let id=0; const mk=(n,w)=>{ const u="p"+(id++); P.cards[u]={n,where:w,t:0}; return u; };
   const main=[]; ["Monsters","Spells","Traps"].forEach(s=>DECK[s].forEach(([q,n])=>{ for(let i=0;i<q;i++) main.push(mk(n,"deck")); }));
   DECK["Extra Deck"].forEach(([q,n])=>{ for(let i=0;i<q;i++) mk(n,"extra"); });
   P.deck=shuffle(main);
   for(const u in P.cards) makePEl(u);
   for(let i=0;i<5;i++) place(P.deck[P.deck.length-1],"hand");
-  endSelect();
-  say("New duel. You drew 5 cards. You’re going first, so there’s no draw this turn. Drag a card onto the field, or tap it for options.");
+  endSelect(); setDropMode("normal");
+  say("New duel. You drew 5 cards. You’re going first, so there’s no draw this turn. Drag a card onto the field to play it. Tap any card for its details and tips.");
   renderPlay(false);
 }
 function place(u,where,o={}){
@@ -599,21 +697,37 @@ function makePEl(u){
   el.addEventListener("pointerdown",e=>{
     const c=P.cards[u]; if(!(c.where==="hand"||isZone(c.where))) return;
     e.preventDefault(); try{ el.setPointerCapture(e.pointerId); }catch(_){}
-    drag={u,sx:e.clientX,sy:e.clientY,moved:false,r:stage.getBoundingClientRect()};
+    drag={u,sx:e.clientX,sy:e.clientY,moved:false,long:false,r:stage.getBoundingClientRect()};
+    const dd=drag; dd.lp=setTimeout(()=>{ if(drag===dd && !dd.moved && !P.sel){ dd.long=true; if(navigator.vibrate) navigator.vibrate(20); holdCard(u); } },500);
   });
   el.addEventListener("pointermove",e=>{
-    if(!drag||drag.u!==u||P.sel) return;
+    if(!drag||drag.u!==u||P.sel||drag.long) return;
     if(!drag.moved && Math.hypot(e.clientX-drag.sx,e.clientY-drag.sy)<8) return;
-    drag.moved=true; el.style.transition="none"; el.style.zIndex=300;
+    drag.moved=true; clearTimeout(drag.lp); el.style.transition="none"; el.style.zIndex=300;
     const x=e.clientX-drag.r.left, y=e.clientY-drag.r.top;
     el.style.transform=`translate(${x-G.cw/2}px,${y-G.ch/2}px) scale(1.3)`;
   });
   el.addEventListener("pointerup",e=>{
-    if(!drag||drag.u!==u) return; const d=drag; drag=null; el.style.transition="";
+    if(!drag||drag.u!==u) return; const d=drag; drag=null; clearTimeout(d.lp); el.style.transition="";
     suppressClick=true; setTimeout(()=>suppressClick=false,400);
-    if(d.moved){ dropAt(u,e.clientX-d.r.left,e.clientY-d.r.top); renderPlay(); } else tapCard(u);
+    if(d.long) return;
+    if(d.moved){ dropAt(u,e.clientX-d.r.left,e.clientY-d.r.top,overBan(e)); renderPlay(); return; }
+    const c=P.cards[u];
+    if(P.sel || !isMonZone(c.where)) return tapCard(u);
+    if(lastTap.u===u && Date.now()-lastTap.t<320){ clearTimeout(lastTap.tm); lastTap={}; return changePos(u); }
+    lastTap={u,t:Date.now(),tm:setTimeout(()=>{ lastTap={}; tapCard(u); },320)};
   });
-  el.addEventListener("pointercancel",()=>{ drag=null; el.style.transition=""; renderPlay(); });
+  el.addEventListener("pointercancel",()=>{ if(drag) clearTimeout(drag.lp); drag=null; el.style.transition=""; renderPlay(); });
+}
+let lastTap={};
+function overBan(e){ return document.elementsFromPoint(e.clientX,e.clientY).some(x=>x.id==="pBan"); }
+function holdCard(u){
+  const c=P.cards[u], w=c.where;
+  if(w==="hand") return useEffect(u);
+  if(isMonZone(w)) return c.pos==="set"? changePos(u) : useEffect(u);
+  if(isZone(w)) return c.pos==="set"? activateSet(u) : useEffect(u);
+  if(w==="gy"||w==="ban") return useEffect(u);
+  if(w==="deck"||w==="extra") return no("Cards in your Deck can’t use their effects from there. Drag it out when a card effect lets you.");
 }
 function addImg(el,n){ const d=DB[n]; if(d && !el.querySelector("img")){ const im=new Image(); im.alt=n; im.draggable=false; im.src=d.small||d.img;
   im.onload=()=>{ const f=el.querySelector(".fb"); if(f) f.style.display="none"; }; el.prepend(im); } }
@@ -655,8 +769,28 @@ function renderPlay(animate=true){
     const lv=el.querySelector(".lv"); lv.textContent = L!=null? "★"+L : ""; lv.classList.toggle("mod", !!c.lvMod);
     if(!animate){ el.offsetHeight; el.style.transition=""; }
   }
-  updatePileCounts(); pstat();
+  updatePileCounts(); pstat(); track();
 }
+
+
+// ---- Undo: every change to the duel is saved as one step ----
+let hist=[], lastState=null, restoring=false;
+function ser(){ return JSON.stringify({cards:P.cards,deck:P.deck,t:P.t,turn:P.turn,normalUsed:P.normalUsed,used:P.used,lock:P.lock,dm:dropMode}); }
+function track(){
+  if(restoring) return; const j=ser();
+  if(lastState!==null && j!==lastState){ hist.push({s:lastState,cap:document.getElementById("cap").textContent}); if(hist.length>300) hist.shift(); }
+  lastState=j; document.getElementById("pUndo").disabled=!hist.length;
+}
+function undo(){
+  if(P.sel) endSelect();
+  const h=hist.pop(); if(!h) return no("Nothing to undo yet.");
+  const o=JSON.parse(h.s); Object.assign(P,{cards:o.cards,deck:o.deck,t:o.t,turn:o.turn,normalUsed:o.normalUsed,used:o.used,lock:o.lock});
+  setDropMode(o.dm||"normal"); lastState=h.s;
+  restoring=true; renderPlay(); restoring=false;
+  document.getElementById("pUndo").disabled=!hist.length;
+  say(`Undid: ${h.cap}`);
+}
+document.getElementById("pUndo").onclick=undo;
 
 // ---- Selecting cards (Tributes, Synchro materials) ----
 function startSelect(o){
@@ -680,7 +814,7 @@ function tapCard(u){
     if(P.sel.need && p.length===P.sel.need) P.sel.done([...p]);
     return;
   }
-  openActions(u);
+  openCard(c.n,u);
 }
 
 // ---- Once-per-turn checks ----
@@ -712,7 +846,7 @@ function tryNormal(u,zone,set){
     endSelect(); tribs.forEach(t=>place(t,"gy"));
     const z = zone && !occ(zone) ? zone : freeMZ();
     if(!z) return no("All 5 of your Monster Zones are full.");
-    P.normalUsed=true; place(u,z,{pos:set?"set":"atk",placedTurn:P.turn});
+    P.normalUsed=true; place(u,z,{pos:set?"set":"atk",placedTurn:P.turn}); setDropMode("spa");
     say(set? `Set ${c.n} face-down in Defense Position.` : `Normal Summoned ${c.n}${tribs.length?` by Tributing ${tribs.length} monster${tribs.length>1?"s":""}`:""}.`);
     renderPlay();
   };
@@ -733,12 +867,14 @@ function trySpecial(u,zone,pos){
   say(`Special Summoned ${c.n} from ${from} in ${pos==="atk"?"Attack":"Defense"} Position. Remember this needs a card effect that allows it.`);
   renderPlay();
 }
-function startSynchro(u){
+function startSynchro(u,zone){
   const c=P.cards[u], d=info(c.n);
   if(P.lock && !matchWords(c.n,P.lock.words)) return no(`You used ${P.lock.src}’s effect, so you can only Special Summon ${P.lock.text} monsters from the Extra Deck this turn.`);
   const faceUp=monsters().filter(m=>P.cards[m].pos!=="set");
   if(faceUp.length<2) return no("A Synchro Summon needs a Tuner and at least one other face-up monster on your field.");
-  startSynchroSelect(u, d);
+  if(zone && occ(zone)) return no("That zone already has a card in it.");
+  if(zone && EMZ.includes(zone) && EMZ.some(z=>z!==zone && occ(z))) return no("You can only use one Extra Monster Zone.");
+  P.synZone=zone||null; startSynchroSelect(u, d);
 }
 function startSynchroSelect(u,d){
   const n=P.cards[u].n;
@@ -761,7 +897,8 @@ function finishSynchro(u,mats){
     if(sum!==d.level) return no(`Those materials add up to Level ${sum}, but ${n} is Level ${d.level}. They have to match exactly.`); }
   endSelect();
   mats.forEach(m=>place(m,"gy"));
-  const z = !EMZ.some(occ) ? "emzL" : freeMZ();
+  const want=P.synZone; P.synZone=null;
+  const z = want && !occ(want) ? want : !EMZ.some(occ) ? "emzL" : freeMZ();
   if(!z) return no("You have no open zone for that monster.");
   place(u,z,{pos:"atk",placedTurn:P.turn,proper:true});
   say(`Synchro Summoned ${n} using ${mats.map(m=>P.cards[m].n).join(", ")}.`);
@@ -818,8 +955,9 @@ function useEffect(u){
     let extra="";
     const m=d && /cannot Special Summon monsters from the Extra Deck for the rest of this turn, except ([^.,]+?) monsters/i.exec(d.desc);
     if(m && isZone(c.where)){ P.lock={src:c.n,text:m[1].trim(),words:m[1].trim().split(/\s+/)}; extra=` From now on this turn you can only Special Summon ${P.lock.text} monsters from the Extra Deck.`; }
-    const el=pEls[u]; el.classList.add("act"); setTimeout(()=>el.classList.remove("act"),1500);
-    say(`Used ${c.n}’s effect. Move the cards it affects yourself.${extra}`); renderPlay();
+    const el=pEls[u]; if(isZone(c.where)||c.where==="hand"){ el.classList.add("act"); setTimeout(()=>el.classList.remove("act"),1500); }
+    const from={hand:" from your hand",gy:" from the GY",ban:" while banished"}[c.where]||"";
+    say(`Used ${c.n}’s effect${from}. Move the cards it affects yourself.${extra}`); renderPlay();
   });
 }
 function changePos(u){
@@ -837,30 +975,40 @@ function moveTo(u,where,msg){
   place(u,where); say(msg); renderPlay();
 }
 
-function dropAt(u,x,y){
-  const c=P.cards[u], k=zoneAt(x,y), inHand=y>G.boardH;
-  if(c.where==="hand"){
-    if(inHand || !k) return;
-    if(k.startsWith("o")) return no("That’s your opponent’s side of the field.");
-    if(k==="gy") return moveTo(u,"gy",`Sent ${c.n} from your hand to the GY.`);
-    if(k==="deck"||k==="extra") return no("You can’t put a card there by dragging. Tap the card to see what you can do with it.");
-    if(isMonKind(c.n)){
-      if(SZ.includes(k)||k==="field") return no("Monsters go in your Monster Zones, the row above your Spell & Trap Zones.");
-      return sheet(c.n,u,"How do you want to put it on the field?",[
-        ["Normal Summon",()=>tryNormal(u,k,false)],["Set (face-down Defense)",()=>tryNormal(u,k,true)],
-        ["Special Summon in Attack (by a card effect)",()=>trySpecial(u,k,"atk")],["Special Summon in Defense (by a card effect)",()=>trySpecial(u,k,"def")]]);
+let dropMode="normal";
+document.querySelectorAll("#dmode button").forEach(b=>b.onclick=()=>setDropMode(b.dataset.m));
+function setDropMode(m){ dropMode=m; document.querySelectorAll("#dmode button").forEach(b=>b.classList.toggle("on",b.dataset.m===m)); }
+const FROM={hand:"from your hand",gy:"from your GY",deck:"from your Deck",extra:"from your Extra Deck",ban:"from banishment"};
+function dropAt(u,x,y,ban){
+  const c=P.cards[u], n=c.n, w=c.where, ex=KIND[n]==="extra", mon=isMonKind(n);
+  const k=ban?"ban":zoneAt(x,y), inHand=!ban && y>G.boardH, from=isZone(w)?"":" "+(FROM[w]||"");
+  if(inHand){
+    if(w==="hand") return;
+    if(ex) return no(`${n} is an Extra Deck monster, so it can’t go to your hand.`);
+    return moveTo(u,"hand", w==="deck"?`Added ${n} from your Deck to your hand.`:`Returned ${n} to your hand${from}.`);
+  }
+  if(!k || k===w) return;
+  if(k.startsWith("o")) return no("That’s your opponent’s side of the field.");
+  if(k==="ban") return moveTo(u,"ban",`Banished ${n}${from}.`);
+  if(k==="gy") return moveTo(u,"gy", w==="hand"?`Sent ${n} from your hand to the GY.`:`Sent ${n}${from} to the GY.`);
+  if(k==="deck"){ if(ex) return no("Extra Deck monsters go back to the Extra Deck, not your main Deck."); if(w==="deck") return; return moveTo(u,"deck",`Shuffled ${n} into your Deck.`); }
+  if(k==="extra"){ if(!ex) return no("Only Synchro monsters go in the Extra Deck."); return moveTo(u,"extra",`Returned ${n} to your Extra Deck.`); }
+  if(isZone(w)) return no("You can’t move a card to a different zone without a card effect that lets you.");
+  if(mon){
+    if(SZ.includes(k)||k==="field") return no("Monsters go in your Monster Zones, the row above your Spell & Trap Zones.");
+    if(w==="extra") return startSynchro(u,k);
+    if(w==="hand" && (dropMode==="normal"||dropMode==="set")){
+      const ok=tryNormal(u,k,dropMode==="set");
+      if(P.normalUsed && P.cards[u].where!=="hand") setDropMode("spa");
+      return ok;
     }
-    if(isMonZone(k)) return no("Spells and Traps go in your Spell & Trap Zones, the bottom row.");
-    if(KIND[c.n]==="trap"){ if(k==="field") return no("Only Field Spells go in the Field Zone."); return trySet(u,k); }
-    if(k==="field" && subType(c.n) && subType(c.n)!=="Field") return no("Only Field Spells go in the Field Zone.");
-    if(SZ.includes(k) && subType(c.n)==="Field") return no("Field Spells go in the Field Zone, on the left.");
-    return sheet(c.n,u,"Activate it or Set it?",[["Activate",()=>tryActivate(u,k)],["Set face-down",()=>trySet(u,k)]]);
+    return trySpecial(u,k,dropMode==="spd"?"def":"atk");
   }
-  if(isZone(c.where)){
-    if(k==="gy") return moveTo(u,"gy",`Sent ${c.n} to the GY.`);
-    if(inHand) return moveTo(u,"hand",`Returned ${c.n} to your hand.`);
-    if(k && k!==c.where && isZone(k)) return no("You can’t move a card to a different zone without a card effect that lets you.");
-  }
+  if(isMonZone(k)) return no("Spells and Traps go in your Spell & Trap Zones, the bottom row.");
+  if(KIND[n]==="trap"){ if(k==="field") return no("Only Field Spells go in the Field Zone."); return trySet(u,k); }
+  if(k==="field" && subType(n) && subType(n)!=="Field") return no("Only Field Spells go in the Field Zone.");
+  if(SZ.includes(k) && subType(n)==="Field") return no("Field Spells go in the Field Zone, on the left.");
+  return dropMode==="set"? trySet(u,k) : tryActivate(u,k);
 }
 
 // ---- Menus ----
@@ -873,41 +1021,29 @@ function sheet(n,u,msg,acts){
   add("Cancel",()=>{},"cancel");
   modal.classList.add("on");
 }
-function openActions(u){
-  const c=P.cards[u], n=c.n, k=KIND[n], w=c.where, A=[];
-  if(w==="hand"){
-    if(k==="mon") A.push(["Normal Summon",()=>tryNormal(u,null,false)],["Set (face-down Defense)",()=>tryNormal(u,null,true)],
-      ["Special Summon in Attack (by a card effect)",()=>trySpecial(u,null,"atk")],["Special Summon in Defense (by a card effect)",()=>trySpecial(u,null,"def")]);
-    if(k==="spell") A.push(["Activate",()=>tryActivate(u,null)],["Set face-down",()=>trySet(u,null)]);
-    if(k==="trap") A.push(["Set face-down",()=>trySet(u,null)],["Activate from hand",()=>tryActivate(u,null)]);
-    A.push(["Use an effect from your hand",()=>useEffect(u)],["Discard to the GY",()=>moveTo(u,"gy",`Discarded ${n}.`)]);
-    return sheet(n,u,"In your hand",A);
-  }
-  if(isMonZone(w)){
-    if(c.pos==="set") A.push(["Flip Summon",()=>changePos(u)]);
-    else A.push(["Use effect",()=>useEffect(u)],[c.pos==="atk"?"Change to Defense Position":"Change to Attack Position",()=>changePos(u)],
-      ["Lower Level by 1 (by a card effect)",()=>{ c.lvMod=(c.lvMod||0)-1; say(`${n} is now Level ${lvl(u)}.`); renderPlay(); }],
-      ["Raise Level by 1 (by a card effect)",()=>{ c.lvMod=(c.lvMod||0)+1; say(`${n} is now Level ${lvl(u)}.`); renderPlay(); }]);
-  } else if(c.pos==="set") A.push(["Activate",()=>activateSet(u)]);
-  else A.push(["Use effect",()=>useEffect(u)]);
-  A.push(["Send to the GY",()=>moveTo(u,"gy",`Sent ${n} to the GY.`)],["Return to hand",()=>moveTo(u,"hand",`Returned ${n} to your hand.`)],
-    ["Banish",()=>moveTo(u,"ban",`Banished ${n}.`)]);
-  sheet(n,u,"On your field",A);
+function pileGesture(el,u){
+  el.addEventListener("pointerdown",e=>{
+    e.preventDefault(); const sx=e.clientX, sy=e.clientY; let moved=false, long=false;
+    const lp=setTimeout(()=>{ if(!moved){ long=true; if(navigator.vibrate) navigator.vibrate(20); closeCard(); holdCard(u); } },500);
+    const mv=ev=>{ if(long) return;
+      if(!moved && Math.hypot(ev.clientX-sx,ev.clientY-sy)<8) return;
+      if(!moved){ moved=true; clearTimeout(lp); closeCard(); startPileDrag(u); }
+      pileDragMove(u,ev); };
+    const up=ev=>{ clearTimeout(lp); window.removeEventListener("pointermove",mv); window.removeEventListener("pointerup",up); window.removeEventListener("pointercancel",cx);
+      if(long) return;
+      if(moved){ const r=stage.getBoundingClientRect(); pEls[u].style.transition=""; pEls[u].style.pointerEvents="";
+        dropAt(u,ev.clientX-r.left,ev.clientY-r.top,overBan(ev)); renderPlay(); return; }
+      openCard(P.cards[u].n,u); };
+    const cx=()=>{ clearTimeout(lp); window.removeEventListener("pointermove",mv); window.removeEventListener("pointerup",up); window.removeEventListener("pointercancel",cx); renderPlay(); };
+    window.addEventListener("pointermove",mv); window.addEventListener("pointerup",up); window.addEventListener("pointercancel",cx);
+  });
 }
-function pileActions(u){
-  const c=P.cards[u], n=c.n, w=c.where, A=[], mon=isMonKind(n);
-  if(w==="deck"){ A.push(["Add to hand (search)",()=>moveTo(u,"hand",`Added ${n} from your Deck to your hand.`)],["Send to the GY",()=>moveTo(u,"gy",`Sent ${n} from your Deck to the GY.`)]);
-    if(mon) A.push(["Special Summon in Attack",()=>trySpecial(u,null,"atk")],["Special Summon in Defense",()=>trySpecial(u,null,"def")]); }
-  if(w==="extra") A.push(["Synchro Summon",()=>startSynchro(u)],["Send to the GY (by a card effect)",()=>moveTo(u,"gy",`Sent ${n} from your Extra Deck to the GY.`)]);
-  if(w==="gy"){ A.push(["Use effect from the GY",()=>useEffect(u)]);
-    if(mon) A.push(["Special Summon in Attack",()=>trySpecial(u,null,"atk")],["Special Summon in Defense",()=>trySpecial(u,null,"def")]);
-    A.push(["Add to hand",()=>moveTo(u,"hand",`Added ${n} from your GY to your hand.`)],["Banish",()=>moveTo(u,"ban",`Banished ${n} from your GY.`)],
-      ["Shuffle into the Deck",()=>moveTo(u,"deck",`Shuffled ${n} into your Deck.`)]); }
-  if(w==="ban"){ if(mon) A.push(["Special Summon in Attack",()=>trySpecial(u,null,"atk")]);
-    A.push(["Add to hand",()=>moveTo(u,"hand",`Added ${n} to your hand.`)],["Return to the GY",()=>moveTo(u,"gy",`Returned ${n} to the GY.`)]); }
-  const where={deck:"In your Deck",extra:"In your Extra Deck",gy:"In your GY",ban:"Banished"}[w];
-  sheet(n,u,where,A);
+function startPileDrag(u){
+  const el=pEls[u]; el.style.display=""; el.style.width=G.cw+"px"; el.style.height=G.ch+"px";
+  el.style.transition="none"; el.style.zIndex=300; el.style.pointerEvents="none"; el.classList.remove("down");
 }
+function pileDragMove(u,e){ const r=stage.getBoundingClientRect(), el=pEls[u];
+  el.style.transform=`translate(${e.clientX-r.left-G.cw/2}px,${e.clientY-r.top-G.ch/2}px) scale(1.3)`; }
 function openPlayPile(k){
   if(P.sel) return no("Finish picking cards first, or tap Cancel.");
   let list=Object.keys(P.cards).filter(u=>P.cards[u].where===k);
@@ -918,8 +1054,8 @@ function openPlayPile(k){
   const title={gy:"Graveyard",deck:"Deck",extra:"Extra Deck",ban:"Banished"}[k];
   box.innerHTML=`<h3>${title} (${list.length})</h3>` + (list.length? `<div class="pg">`+groups.map(g=>{ const d=DB[g.n]||{};
     return `<div class="pc" data-u="${g.u}">${d.small?`<img src="${d.small}" alt="">`:esc(g.n)}${g.q>1?`<span class="q">×${g.q}</span>`:""}</div>`; }).join("")+`</div>`
-    : `<div class="empty">No cards here.</div>`) + `<p class="empty" style="margin:0;font-size:13px">Tap a card for what you can do with it.</p><button id="mClose">Close</button>`;
-  box.querySelectorAll(".pc").forEach(e=>e.onclick=()=>pileActions(e.dataset.u));
+    : `<div class="empty">No cards here.</div>`) + `<p class="empty" style="margin:0;font-size:13px">Tap a card for details. Drag it out onto the field or your hand.${k==="gy"||k==="ban"?" Hold it to use its effect from here.":""}</p><button id="mClose">Close</button>`;
+  box.querySelectorAll(".pc").forEach(e=>pileGesture(e,e.dataset.u));
   document.getElementById("mClose").onclick=closeCard;
   modal.classList.add("on");
 }
@@ -928,7 +1064,7 @@ document.getElementById("pNext").onclick=()=>{
   if(P.sel) return no("Finish picking cards first, or tap Cancel.");
   const h=Object.values(P.cards).filter(c=>c.where==="hand").length;
   if(h>6) return no(`You have ${h} cards in hand. Discard down to 6 before ending your turn.`);
-  P.turn++; P.normalUsed=false; P.used={}; P.lock=null;
+  P.turn++; P.normalUsed=false; P.used={}; P.lock=null; setDropMode("normal");
   if(!P.deck.length){ say(`Turn ${P.turn}. Your Deck is empty, so you can’t draw. In a real duel, you’d lose here.`); return renderPlay(); }
   const u=P.deck[P.deck.length-1]; place(u,"hand");
   say(`Turn ${P.turn}. You drew ${P.cards[u].n}. Your Normal Summon and once-per-turn effects are available again.`);
