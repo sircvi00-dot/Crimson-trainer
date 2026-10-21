@@ -105,13 +105,25 @@ select{font-family:var(--ui);font-size:15px;background:rgba(20,4,10,.7);color:va
 .dcard .q{position:absolute;right:3px;bottom:3px;background:var(--deep);color:var(--gold);border:1px solid var(--gold);border-radius:4px;font-size:12px;padding:0 5px}
 .modal{position:fixed;inset:0;background:rgba(8,1,4,.82);display:none;align-items:center;justify-content:center;z-index:200;padding:16px}
 .modal.on{display:flex}
-.mbox{max-width:760px;width:100%;max-height:92vh;overflow:auto;background:linear-gradient(180deg,#2a0a10,#170509);
-  border:1px solid var(--gold);border-radius:12px;padding:14px;display:grid;gap:12px;grid-template-columns:minmax(0,1fr)}
-.mbox img{width:100%;max-width:300px;justify-self:center;border-radius:6px}
-.mbox h3{font-family:var(--display);color:var(--gold);margin:0;font-size:19px}
-.mbox .role{background:rgba(226,178,90,.1);border-left:3px solid var(--gold);padding:8px 10px;font-size:15px}
-.mbox .desc{font-size:14px;color:var(--mute);white-space:pre-line}
-@media (min-width:760px){.mbox{grid-template-columns:300px minmax(0,1fr)}.mbox img{grid-row:span 4}}
+.mbox{max-width:760px;width:100%;max-height:min(62vh,520px);background:linear-gradient(180deg,#2a0a10,#170509);
+  border:1px solid var(--gold);border-radius:12px;padding:10px;display:grid;gap:10px;grid-template-columns:34% minmax(0,1fr);align-items:start}
+.mbox img{width:100%;border-radius:5px;box-shadow:0 4px 12px rgba(0,0,0,.6)}
+.mtext{display:flex;flex-direction:column;gap:8px;max-height:calc(min(62vh,520px) - 20px);min-height:0}
+.mscroll{overflow:auto;display:flex;flex-direction:column;gap:8px;min-height:0;flex:1}
+.mbox h3{font-family:var(--display);color:var(--gold);margin:0;font-size:15px;line-height:1.2}
+.mbox .role{background:rgba(226,178,90,.1);border-left:3px solid var(--gold);padding:6px 8px;font-size:13px;line-height:1.35}
+.mbox .desc{font-size:12px;line-height:1.45;color:var(--mute);white-space:pre-line}
+.mbox #mClose{flex:none;padding:9px}
+@media (min-width:760px){.mbox{grid-template-columns:300px minmax(0,1fr);padding:14px;gap:14px}
+  .mbox h3{font-size:19px}.mbox .role{font-size:15px}.mbox .desc{font-size:14px}}
+.pview{max-width:760px;width:100%;max-height:min(70vh,600px);background:linear-gradient(180deg,#2a0a10,#170509);border:1px solid var(--gold);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:10px}
+.pview h3{font-family:var(--display);color:var(--gold);margin:0;font-size:17px}
+.pview .pg{overflow:auto;display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;min-height:0}
+.pview .pc{position:relative;aspect-ratio:59/86;border-radius:4px;overflow:hidden;background:#3a1a10;cursor:pointer;font-size:10px;color:var(--mute);display:flex;align-items:center;justify-content:center;text-align:center;padding:2px}
+.pview .pc img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.pview .pc .q{position:absolute;right:2px;bottom:2px;background:var(--deep);color:var(--gold);border:1px solid var(--gold);border-radius:4px;font-size:11px;padding:0 4px;z-index:1}
+.pview .empty{color:var(--mute);font-size:14px}
+.stage{-webkit-touch-callout:none;user-select:none;-webkit-user-select:none}
 @media (min-width:980px){.main{display:grid;grid-template-columns:minmax(0,600px) minmax(0,1fr);gap:18px;align-items:start}}
 .status{font-size:13px;color:var(--mute);text-align:center}
 @media (prefers-reduced-motion:reduce){.card{transition:none}.card.act,.flash,.banner,.opts button.bad{animation:none}}
@@ -295,7 +307,7 @@ function layout(){
   }
   stage.appendChild(board);
   const hb=document.createElement("div");hb.className="handbar";hb.style.top=(G.boardH+8)+"px";hb.style.height=handH+"px";stage.appendChild(hb);
-  [["deck",33],["extra",10],["odeck",35],["oextra",15]].forEach(([k,n])=>{
+  [["deck",""],["extra",""],["odeck",35],["oextra",15]].forEach(([k,n])=>{
     const [x,y]=center(k); const p=document.createElement("div"); p.className="pile";
     p.style.cssText=`width:${cw}px;height:${ch}px;left:${x-cw/2}px;top:${y-ch/2}px;z-index:1`;
     p.innerHTML=`<span class="n">${n}</span>`; p.dataset.k=k; stage.appendChild(p);
@@ -307,7 +319,7 @@ function makeCards(){
   for(const id in INST){
     const el=document.createElement("div"); el.className="card"; el.dataset.id=id;
     el.innerHTML=`<div class="fb">${INST[id]}</div><div class="back"></div>`;
-    el.addEventListener("click",()=>{ if(!el.classList.contains("down") && el.style.opacity!=="0") openCard(INST[id]); });
+    el.addEventListener("click",()=>{ if(el.style.opacity!=="0") openCard(INST[id]); });
     stage.appendChild(el); cardEls[id]=el;
   }
 }
@@ -344,6 +356,7 @@ function render(i, animate=true){
     el.classList.toggle("act", !!(step.act && step.act.includes(id)));
     if(!animate){ el.offsetHeight; el.style.transition=""; }
   }
+  updatePileCounts();
   document.getElementById("stepk").textContent = i===0 ? "Opening hand" : `Step ${i} of ${STEPS.length-1}`;
   document.getElementById("cap").textContent = step.cap;
   if(animate && step.flash) setTimeout(()=>fx(step.flash, step.banner), 500);
@@ -360,6 +373,53 @@ function fx(zone, text){
 
 let timer=null;
 const bPlay=document.getElementById("bPlay");
+
+function expand(list){ const o=[]; list.forEach(([q,n])=>{for(let i=0;i<q;i++)o.push(n)}); return o; }
+function pileContents(k, i){
+  const st=stateAt(i);
+  if(k==="gy") return Object.keys(st).filter(id=>st[id].z==="gy").sort((a,b)=>st[b].t-st[a].t).map(id=>INST[id]);
+  const src = k==="extra" ? expand(DECK["Extra Deck"]) : expand([...DECK.Monsters,...DECK.Spells,...DECK.Traps]);
+  for(const id in st){ const home = k==="extra" ? INIT[id]==="extra" : (INIT[id]==="deck"||INIT[id]==="hand");
+    if(home && st[id].z!==k){ const j=src.indexOf(INST[id]); if(j>=0) src.splice(j,1); } }
+  return src;
+}
+function updatePileCounts(){
+  ["deck","extra"].forEach(k=>{ const el=stage.querySelector(`.pile[data-k="${k}"] .n`); if(el) el.textContent=pileContents(k,cur).length; });
+}
+const PNAME={gy:"Graveyard",deck:"Deck",extra:"Extra Deck"};
+function openPile(k){
+  const list=pileContents(k,cur); const counts={}; const order=[];
+  list.forEach(n=>{ if(!counts[n]){counts[n]=0;order.push(n);} counts[n]++; });
+  if(k!=="gy") order.sort();
+  const box=document.getElementById("mbox"); box.className="pview";
+  box.innerHTML=`<h3>${PNAME[k]} (${list.length})</h3>` + (list.length?`<div class="pg">`+order.map(n=>{const d=DB[n]||{};
+    return `<div class="pc" data-n="${n.replace(/"/g,"&quot;")}">${d.small||d.img?`<img src="${d.small||d.img}" alt="">`:n}${counts[n]>1?`<span class="q">×${counts[n]}</span>`:""}</div>`}).join("")+`</div>`
+    :`<div class="empty">No cards here yet.</div>`) + `<button id="mClose">Close</button>`;
+  box.querySelectorAll(".pc").forEach(e=>e.onclick=()=>openCard(e.dataset.n));
+  document.getElementById("mClose").onclick=closeCard;
+  modal.classList.add("on");
+}
+function pileAt(x,y){
+  for(const k of ["gy","deck","extra"]){ const [cx,cy]=center(k); if(Math.abs(x-cx)<G.cell/2 && Math.abs(y-cy)<G.rowH/2) return k; }
+  return null;
+}
+(function(){
+  let t=null, fired=false, sx=0, sy=0;
+  stage.addEventListener("pointerdown",e=>{
+    const r=stage.getBoundingClientRect(); const k=pileAt(e.clientX-r.left,e.clientY-r.top); fired=false; if(!k) return;
+    sx=e.clientX; sy=e.clientY; t=setTimeout(()=>{ fired=true; if(navigator.vibrate) navigator.vibrate(15); openPile(k); },450);
+  });
+  const cancel=()=>{ clearTimeout(t); t=null; };
+  stage.addEventListener("pointermove",e=>{ if(t && Math.hypot(e.clientX-sx,e.clientY-sy)>10) cancel(); });
+  stage.addEventListener("pointerup",cancel); stage.addEventListener("pointercancel",cancel);
+  stage.addEventListener("click",e=>{
+    if(fired){ e.stopPropagation(); e.preventDefault(); fired=false; return; }
+    const r=stage.getBoundingClientRect(); const k=pileAt(e.clientX-r.left,e.clientY-r.top);
+    if(k==="deck"||k==="extra"||(k==="gy"&&!e.target.closest(".card"))) openPile(k);
+  },true);
+  stage.addEventListener("contextmenu",e=>{ if(pileAt(e.clientX-stage.getBoundingClientRect().left,e.clientY-stage.getBoundingClientRect().top)) e.preventDefault(); });
+})();
+
 function go(i){ cur=Math.max(0,Math.min(STEPS.length-1,i)); render(cur); }
 function stop(){ clearTimeout(timer); timer=null; bPlay.textContent="Auto play"; }
 function tick(){ if(cur>=STEPS.length-1){ stop(); return; }
@@ -423,11 +483,11 @@ function buildDeck(){
 
 const modal=document.getElementById("modal");
 function openCard(n){
-  const d=DB[n]||{}; const box=document.getElementById("mbox");
-  box.innerHTML = (d.img?`<img src="${d.img}" alt="${n}">`:"") +
-    `<h3>${n}</h3>` + (ROLE[n]?`<div class="role">${ROLE[n]}</div>`:"") +
-    `<div class="desc">${d.desc ? d.desc.replace(/</g,"&lt;") : "Card text loads when you’re online."}</div>` +
-    `<button id="mClose">Close</button>`;
+  const d=DB[n]||{}; const box=document.getElementById("mbox"); box.className="mbox";
+  box.innerHTML = (d.img?`<img src="${d.img}" alt="${n}">`:`<div></div>`) +
+    `<div class="mtext"><div class="mscroll"><h3>${n}</h3>` + (ROLE[n]?`<div class="role">${ROLE[n]}</div>`:"") +
+    `<div class="desc">${d.desc ? d.desc.replace(/</g,"&lt;") : "Card text loads when you’re online."}</div></div>` +
+    `<button id="mClose">Close</button></div>`;
   document.getElementById("mClose").onclick=closeCard;
   modal.classList.add("on");
 }
