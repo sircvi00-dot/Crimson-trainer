@@ -156,6 +156,11 @@ body.playing .owe{display:inline-block}
 .sheet{max-width:420px;width:100%;max-height:82vh;overflow:auto;background:#fbfaf8;border:1px solid var(--gold);border-radius:12px;padding:12px;display:flex;flex-direction:column;gap:7px}
 .sheet .hd{display:flex;gap:10px;align-items:center;margin-bottom:2px}
 .sheet .hd img{width:52px;border-radius:3px}
+.sheet button.used{opacity:.45;text-decoration:line-through}
+.sheet .wn{font-size:14px;line-height:1.4;background:#fff;border:1px solid rgba(168,116,31,.35);border-radius:8px;padding:8px 10px}
+.sheet .wn.best{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
+.sheet .wn ul{margin:4px 0 0;padding-left:18px}.sheet .wn li{margin:3px 0}
+.sheet .wnote{font-size:12px;color:var(--mute);margin:0}
 .sheet h3{font-family:var(--display);color:var(--gold);margin:0;font-size:16px}
 .sheet .hd p{margin:2px 0 0;font-size:13px;color:var(--mute)}
 .sheet button{text-align:left}.sheet button.cancel{text-align:center;margin-top:4px}
@@ -205,7 +210,7 @@ body.playing .owe{display:inline-block}
       <div id="playCtrls" style="display:none" class="panel">
         <div id="selBar" class="selbar" style="display:none"><p id="selT"></p>
           <div class="ctrls"><button id="selOk" class="primary">Confirm</button><button id="selNo">Cancel</button></div></div>
-        <div class="ctrls"><button id="pNext" class="primary">End turn</button><button id="pUndo" disabled>↶ Undo</button><button id="pBan">Banished (0)</button><button id="pNew">New duel</button></div>
+        <div class="ctrls"><button id="pNext" class="primary">End turn</button><button id="pUndo" disabled>↶ Undo</button><button id="pBan">Banished (0)</button><button id="pNew">New duel</button><button id="pWhat">💡 What now?</button></div>
         <div class="pstat" id="pstat"></div>
         <div class="dmode" id="dmode">Play cards as:
           <button data-m="normal" class="on">Normal Summon</button><button data-m="set">Set</button><button data-m="spa">Special ATK</button><button data-m="spd">Special DEF</button></div>
@@ -666,6 +671,8 @@ const isZone=k=>FIELD.includes(k), isMonZone=k=>MZ.includes(k)||EMZ.includes(k);
 const info=n=>DB[n]||null;
 const isMonKind=n=>KIND[n]==="mon"||KIND[n]==="extra";
 function lvl(u){ const c=P.cards[u], d=info(c.n); if(!d||d.level==null) return null; return Math.max(1,d.level+(c.lvMod||0)); }
+const ALIAS={"Scarred Dragon Archfiend":"Red Dragon Archfiend"};
+const nameIs=(u,q)=>{ const c=P.cards[u]; return c.n===q || (ALIAS[c.n]===q && (isZone(c.where)||c.where==="gy")); };
 function tuner(n){ const d=info(n); return d? /Tuner/.test(d.type) : null; }
 function subType(n){ const d=info(n); return d? d.race : null; }
 function occ(k){ for(const u in P.cards) if(P.cards[u].where===k) return u; return null; }
@@ -679,7 +686,7 @@ let suppressClick=false, drag=null, toastT=null;
 function toast(msg,bad){
   let t=stage.querySelector(".toast"); if(!t){ t=document.createElement("div"); t.className="toast"; stage.appendChild(t); }
   t.textContent=msg; t.classList.toggle("bad",!!bad); t.classList.add("on");
-  t.style.top=(G.rowH*2.5)+"px";
+  t.style.top=(G.rowH*0.95)+"px";
   clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove("on"), bad?3600:2200);
 }
 function say(msg){ const c=document.getElementById("cap"); c.textContent=msg; c.className=""; const t=stage.querySelector(".toast"); if(t) t.classList.remove("on"); }
@@ -697,7 +704,7 @@ function pstat(){
 
 function newGame(){
   for(const u in pEls){ pEls[u].remove(); delete pEls[u]; }
-  Object.assign(P,{cards:{},deck:[],t:0,turn:1,normalUsed:false,used:{},lock:null,sel:null,grants:[],owed:null}); hist=[]; lastState=null; P.grants=[];
+  Object.assign(P,{cards:{},deck:[],t:0,turn:1,normalUsed:false,used:{},usedE:{},lock:null,sel:null,grants:[],owed:null}); hist=[]; lastState=null; P.grants=[];
   let id=0; const mk=(n,w)=>{ const u="p"+(id++); P.cards[u]={n,where:w,t:0}; return u; };
   const main=[]; ["Monsters","Spells","Traps"].forEach(s=>DECK[s].forEach(([q,n])=>{ for(let i=0;i<q;i++) main.push(mk(n,"deck")); }));
   DECK["Extra Deck"].forEach(([q,n])=>{ for(let i=0;i<q;i++) mk(n,"extra"); });
@@ -711,7 +718,7 @@ function newGame(){
 function place(u,where,o={}){
   const c=P.cards[u]; const i=P.deck.indexOf(u); if(i>=0) P.deck.splice(i,1);
   if(KIND[c.n]==="extra" && (where==="hand"||where==="deck")) where="extra";
-  c.prev=c.where; c.where=where; c.t=++P.t;
+  c.prev=c.where; c.where=where; c.t=++P.t; if(where==="gy") c.gyTurn=P.turn;
   if(!isZone(where)){ delete c.pos; c.lvMod=0; delete c.placedTurn; delete c.posTurn; delete c.toGY; }
   if(where==="extra") delete c.proper;
   if(where==="deck") P.deck.splice(Math.floor(Math.random()*(P.deck.length+1)),0,u);
@@ -806,7 +813,7 @@ function renderPlay(animate=true){
 const DEST_WORD={hand:"add to your hand",gy:"send to the GY",field:"Special Summon"};
 const LOCW=t=>{ const o=[]; if(/\bhand\b/i.test(t)) o.push("hand"); if(/\b(GY|Graveyard)\b/.test(t)) o.push("gy");
   if(/\bfield\b|you control|Monster Zone/i.test(t)) o.push("field"); if(/\bDeck\b/.test(t)) o.push("deck"); return o; };
-const SRC_WORD={deck:"Deck",gy:"GY",hand:"hand"};
+const SRC_WORD={deck:"Deck",gy:"GY",hand:"hand",extra:"Extra Deck"};
 function parseGrants(n,txt){
   const d=info(n); if(!d||!d.desc) return [];
   const out=[];
@@ -817,9 +824,9 @@ function parseGrants(n,txt){
       if(dest) out.push({src:n, dest, left:+tg[1], phrase:tg[2].trim(), except:tg[4]||null, from:LOCW(tg[3]).filter(x=>x!=="field")}); }
     const parts=sent.split(";");
     (parts.length>1?parts.slice(1):parts).forEach(cl=>{
-      const re=/\b(add|send|Special Summon|Set)\s+(?:up to\s+)?(\d+)\s+(.+?)\s+from your ([^,]*?\b(?:Deck|GY|Graveyard)\b[^,]*?)(?:\s+to (?:your hand|the GY)|\s+in\b|,|$)/ig;
+      const re=/\b(add|send|Special Summon|Set)\s+(?:up to\s+)?(\d+)\s+(.+?)\s+from your ([^,]*?\b(?:Deck|GY|Graveyard|hand)\b[^,]*?)(?:\s+to (?:your hand|the GY)|\s+in\b|,|\.|$)/ig;
       let m; while((m=re.exec(cl))){
-        const verb=m[1].toLowerCase(), ex=/except "([^"]+)"/i.exec(cl), from=LOCW(m[4]).filter(x=>x!=="field");
+        const verb=m[1].toLowerCase(), ex=/except "([^"]+)"/i.exec(cl), from=/Extra Deck/i.test(m[4])? ["extra"] : LOCW(m[4]).filter(x=>x!=="field");
         out.push({src:n, dest: verb==="add"?"hand":verb==="send"?"gy":"field", left:+m[2], phrase:m[3].trim(), except: ex?ex[1]:null, from});
       }
     });
@@ -841,7 +848,7 @@ function fitsPhrase(cand,phrase){
   return alts.some(a=>{
     const al=a.toLowerCase(), q=(/"([^"]+)"/.exec(a)||[])[1];
     if(/mentions/.test(al)){ const tgt=q || firstQ; if(tgt && !(d.desc||"").includes(tgt)) return false; }
-    else if(q){ if(!(cand===q || (/monster|card/.test(al) && cand.includes(q)))) return false; }
+    else if(q){ if(!(cand===q || ALIAS[cand]===q || (/monster|card/.test(al) && (cand.includes(q)||(ALIAS[cand]||"").includes(q))))) return false; }
     if(/spell\/trap/.test(al)){ if(k!=="spell"&&k!=="trap") return false; }
     else if(/\bspell\b/.test(al)){ if(k!=="spell") return false; }
     else if(/\btrap\b/.test(al)){ if(k!=="trap") return false; }
@@ -896,6 +903,8 @@ function effectsOf(n){
     if(/you can banish this card from your GY instead/i.test(x)){ locs=["gy"]; cost={act:"banish",self:true,need:1,phrase:"card",from:["gy"],to:"ban"}; }
     if(cost && cost.self && cost.act==="discard") locs=["hand"];
     const res= semi>=0? x.slice(semi+1) : x;
+    if(!locs && semi<0 && /Special Summon this card (?:\()?from your hand/i.test(x)) locs=["hand"];
+    if(!locs && /banish this card from your GY/i.test(x)) locs=["gy"];
     return {i, text:x, locs, cost, selfSS:/Special Summon this card/i.test(res)&&!!locs, activated:/\byou can\b/i.test(x)||semi>=0};
   });
 }
@@ -925,9 +934,89 @@ function effectsHere(u){
   return effectsOf(c.n).filter(e=>e.activated && !e.selfSS && (e.locs? e.locs.includes(from) : from==="field"));
 }
 
+
+// ---- "What now?": reads the current duel and lists the moves still open ----
+function fxUsed(n,re){
+  const d=info(n), txt=d?d.desc:"";
+  if(!/You can only use each effect of/i.test(txt)) return /You can only (use this effect of|activate 1 )/i.test(txt) && (P.used[n]||0)>=1;
+  const e=effectsOf(n).find(x=>re.test(x.text)); return !!e && ((P.usedE||{})[n]||[]).includes(e.i);
+}
+function synchroOptions(){
+  const mons=monsters().filter(m=>P.cards[m].pos!=="set" && lvl(m)!=null);
+  const extras=[...new Set(Object.keys(P.cards).filter(u=>P.cards[u].where==="extra").map(u=>P.cards[u].n))];
+  const out=[];
+  const subsets=(arr,k,start=0,cur=[])=>{ if(cur.length===k) return [cur.slice()]; let r=[]; for(let i=start;i<arr.length;i++){ cur.push(arr[i]); r=r.concat(subsets(arr,k,i+1,cur)); cur.pop(); } return r; };
+  extras.forEach(n=>{
+    if(P.lock && !matchWords(n,P.lock.words)) return;
+    for(let k=2;k<=Math.min(4,mons.length);k++) for(const s of subsets(mons,k)){
+      if(!synErr(n,s)){ const occX=z=>{ const o=occ(z); return o && !s.includes(o); };
+        if(EMZ.some(z=>!occX(z)) && !EMZ.some(occX) || MZ.some(z=>!occX(z))){ out.push({n,mats:s,lv:info(n).level}); return; } }
+    }
+  });
+  return out.sort((a,b)=>b.lv-a.lv);
+}
+function whatNow(){
+  if(!P.cards) return;
+  const where=w=>Object.keys(P.cards).filter(u=>P.cards[u].where===w);
+  const inHand=n=>where("hand").some(u=>P.cards[u].n===n), inGY=n=>where("gy").find(u=>P.cards[u].n===n);
+  const onField=n=>monsters().find(u=>P.cards[u].n===n && P.cards[u].pos!=="set");
+  const inDeck=n=>P.deck.some(u=>P.cards[u].n===n);
+  const mons=monsters(), faceUp=mons.filter(m=>P.cards[m].pos!=="set");
+  const fiendTunerUp=faceUp.some(m=>{ const d=info(P.cards[m].n); return d && d.race==="Fiend" && /Tuner/.test(d.type); });
+  const darkDragonSyn=faceUp.filter(m=>{ const d=info(P.cards[m].n); return d && /Synchro/.test(d.type) && d.attribute==="DARK" && d.race==="Dragon"; });
+  const tips=[];
+  const add=(pri,t)=>tips.push({pri,t});
+  if(P.owed||P.lvOwed){ add(0,"Finish what you started first: the light is on because a cost or a Level change is still owed."); }
+  if(Object.keys(P.cards).some(k=>P.cards[k].toGY && isZone(P.cards[k].where))) add(1,"Drag the Spell you activated to your GY once you’ve applied its effect.");
+  // starters and extenders, in roughly the order the combo uses them
+  if(!P.normalUsed && inHand("Soul Resonator")) add(10,"Normal Summon Soul Resonator, then use it to add a Level 4 or lower Fiend (usually Bone Archfiend) from your Deck.");
+  if(inHand("Resonator Call") && !fxUsed("Resonator Call",/Resonator/)) add(11,"Activate Resonator Call to add a Resonator (Soul Resonator is the usual pick) from your Deck.");
+  if(inHand("Crimson Gaia") && !fxUsed("Crimson Gaia",/During your Main Phase/)) add(12,"Activate Crimson Gaia and add a card that mentions Red Dragon Archfiend (Soul Resonator counts) from your Deck or GY.");
+  if(inHand("Resonator Command") && where("hand").some(u=>/Resonator/.test(P.cards[u].n) && isMonKind(P.cards[u].n))) add(13,"Resonator Command: discard a Resonator monster to add a Level 4 or lower Fiend (like Bone Archfiend) from your Deck.");
+  const bone=["hand","gy"].map(w=>where(w).find(u=>P.cards[u].n==="Bone Archfiend")).find(Boolean);
+  if(bone && !fxUsed("Bone Archfiend",/Special Summon this card/) && (where("hand").length>1 || mons.length)) add(14,`Special Summon Bone Archfiend from your ${P.cards[bone].where==="gy"?"GY":"hand"} by sending 1 other card from your hand or field to the GY.`);
+  if(onField("Bone Archfiend") && !fxUsed("Bone Archfiend",/increase or decrease/)){
+    const t=inDeck("Crimson Resonator")?"Crimson Resonator":P.deck.map(u=>P.cards[u].n).find(n=>{ const d=info(n); return d&&d.race==="Fiend"&&/Tuner/.test(d.type); });
+    if(t) add(15,`Use Bone Archfiend’s Level change: send ${t} from your Deck to the GY${t==="Crimson Resonator"?" (it sets up Red Rising Dragon’s revive)":""}, then raise or lower a monster’s Level by 1 to hit the Synchro you want.`);
+  }
+  const wild=inGY("Wandering King Wildwind");
+  if(wild && P.cards[wild].gyTurn!==P.turn) add(16,"Banish Wandering King Wildwind from your GY to add a Fiend Tuner with 1500 or less ATK from your Deck.");
+  if(inHand("Wandering King Wildwind") && faceUp.some(m=>{ const d=info(P.cards[m].n); return d&&d.race==="Fiend"&&/Tuner/.test(d.type); })) add(17,"Special Summon Wandering King Wildwind from your hand, since you control a Fiend Tuner.");
+  if(inHand("Crimson Resonator") && !mons.length && !fxUsed("Crimson Resonator",/If you control no monsters/)) add(17,"Special Summon Crimson Resonator from your hand, since you control no monsters.");
+  const crim=onField("Crimson Resonator");
+  if(crim && darkDragonSyn.length===1 && mons.length===2 && !fxUsed("Crimson Resonator",/up to 2/)) add(9,"Crimson Resonator’s second effect is live: you control exactly 1 DARK Dragon Synchro, so Special Summon up to 2 Resonators from your hand or Deck.");
+  if(inHand("Red Lotus King, Flame Crime") && fiendTunerUp) add(18,"Special Summon Red Lotus King, Flame Crime from your hand, since you control a Fiend Tuner.");
+  if(inHand("Synkron Resonator") && faceUp.some(m=>/Synchro/.test((info(P.cards[m].n)||{}).type||""))) add(18,"Special Summon Synkron Resonator from your hand, since a Synchro Monster is on the field.");
+  if(inHand("Vision Resonator") && faceUp.some(m=>{ const d=info(P.cards[m].n); return d&&d.attribute==="DARK"&&lvl(m)>=5; })) add(18,"Special Summon Vision Resonator from your hand, since a Level 5 or higher DARK monster is on the field.");
+  if(inHand("Creation Resonator") && faceUp.some(m=>/Synchro/.test((info(P.cards[m].n)||{}).type||"") && lvl(m)>=8)) add(18,"Special Summon Creation Resonator from your hand, since you control a Level 8 or higher Synchro Monster.");
+  const scar=inGY("Scarred Dragon Archfiend");
+  if(scar && P.cards[scar].gyTurn===P.turn && P.cards[scar].prev && isMonZone(P.cards[scar].prev) && !fxUsed("Scarred Dragon Archfiend",/Extra Deck/) && where("extra").some(u=>P.cards[u].n==="Red Dragon Archfiend"))
+    add(8,"Hold Scarred Dragon Archfiend in your GY and use its effect: Red Dragon Archfiend comes out of your Extra Deck with no materials.");
+  const rrdG=inGY("Red Rising Dragon"), lv1=where("gy").filter(u=>/Resonator/.test(P.cards[u].n) && (info(P.cards[u].n)||{}).level===1);
+  if(rrdG && P.cards[rrdG].gyTurn!==P.turn && lv1.length>=2) add(16,"Banish Red Rising Dragon from your GY to Special Summon 2 Level 1 Resonators from your GY.");
+  const rrdF=onField("Red Rising Dragon");
+  if(rrdF && P.cards[rrdF].placedTurn===P.turn && !fxUsed("Red Rising Dragon",/Synchro Summoned/) && where("gy").some(u=>/Resonator/.test(P.cards[u].n)))
+    add(9,`Red Rising Dragon was just Synchro Summoned: hold it to Special Summon a Resonator from your GY${inGY("Crimson Resonator")?" (Crimson Resonator is the usual pick)":""}.`);
+  // Synchros available right now
+  const syn=synchroOptions();
+  syn.slice(0,3).forEach((o,i)=>add(20+i,`Synchro Summon ${o.n} (Level ${o.lv}) using ${o.mats.map(m=>`${P.cards[m].n} (Lv ${lvl(m)})`).join(" + ")}.`));
+  // wrap up
+  const traps=where("hand").filter(u=>KIND[P.cards[u].n]==="trap"), freeS=SZ.filter(z=>!occ(z)).length;
+  if(traps.length && freeS) add(40,`Set your Trap${traps.length>1?"s":""} (${[...new Set(traps.map(u=>P.cards[u].n))].join(", ")}) before you end your turn.`);
+  tips.sort((a,b)=>a.pri-b.pri);
+  const box=document.getElementById("mbox"); box.className="sheet";
+  const best=tips[0], rest=tips.slice(1,7);
+  box.innerHTML=`<div class="hd"><div><h3>What now?</h3><p>Based on your board, hand, GY and the effects you’ve already used this turn.</p></div></div>`+
+    (best? `<div class="wn best"><b>Best next move</b><br>${esc(best.t)}</div>` : `<div class="wn best"><b>Nothing left to build</b><br>You’re out of plays this turn. Set any cards you want to keep face-down, then end your turn.</div>`)+
+    (rest.length? `<div class="wn"><b>Other options</b><ul>${rest.map(x=>`<li>${esc(x.t)}</li>`).join("")}</ul></div>` : "")+
+    `<p class="wnote">These are suggestions from what’s open right now, not a guaranteed best line.</p>`;
+  const b=document.createElement("button"); b.textContent="Close"; b.className="cancel"; b.onclick=closeCard; box.appendChild(b);
+  modal.classList.add("on");
+}
+
 // ---- Undo: every change to the duel is saved as one step ----
 let hist=[], lastState=null, restoring=false;
-function ser(){ return JSON.stringify({cards:P.cards,deck:P.deck,t:P.t,turn:P.turn,normalUsed:P.normalUsed,used:P.used,lock:P.lock,grants:P.grants||[],owed:P.owed||null,lvOwed:P.lvOwed||null,dm:dropMode}); }
+function ser(){ return JSON.stringify({cards:P.cards,deck:P.deck,t:P.t,turn:P.turn,normalUsed:P.normalUsed,used:P.used,usedE:P.usedE||{},lock:P.lock,grants:P.grants||[],owed:P.owed||null,lvOwed:P.lvOwed||null,dm:dropMode}); }
 function track(){
   if(restoring) return; const j=ser();
   if(lastState!==null && j!==lastState){ hist.push({s:lastState,cap:document.getElementById("cap").textContent}); if(hist.length>300) hist.shift(); }
@@ -936,7 +1025,7 @@ function track(){
 function undo(){
   if(P.sel) endSelect();
   const h=hist.pop(); if(!h) return no("Nothing to undo yet.");
-  const o=JSON.parse(h.s); Object.assign(P,{cards:o.cards,deck:o.deck,t:o.t,turn:o.turn,normalUsed:o.normalUsed,used:o.used,lock:o.lock,grants:o.grants||[],owed:o.owed||null,lvOwed:o.lvOwed||null});
+  const o=JSON.parse(h.s); Object.assign(P,{cards:o.cards,deck:o.deck,t:o.t,turn:o.turn,normalUsed:o.normalUsed,used:o.used,usedE:o.usedE||{},lock:o.lock,grants:o.grants||[],owed:o.owed||null,lvOwed:o.lvOwed||null});
   setDropMode(o.dm||"normal"); lastState=h.s;
   restoring=true; renderPlay(); restoring=false;
   document.getElementById("pUndo").disabled=!hist.length;
@@ -970,15 +1059,55 @@ function tapCard(u){
 }
 
 // ---- Once-per-turn checks ----
-function optCheck(n,ok){
+// The "If ..." condition a card's effect needs before it can be used
+function condErr(u,e){
+  if(!e) return "";
+  const n=P.cards[u].n, t=e.text, up=monsters().filter(m=>m!==u && P.cards[m].pos!=="set");
+  const D=m=>info(P.cards[m].n)||{}, syn=m=>/Synchro/.test(D(m).type||""), fTun=m=>D(m).race==="Fiend" && /Tuner/.test(D(m).type||"");
+  const head=(/^([^:]*?)(?::|,\s*you can)/i.exec(t)||[])[1]||"", bad=()=>`${n}’s condition isn’t met right now: “${head.trim()}.”`;
+  let m;
+  if(/If you control no monsters/i.test(head)) return monsters().some(x=>x!==u)? bad() : "";
+  if((m=/If the only other monster you control is exactly 1 (\w+) (\w+) Synchro Monster/i.exec(head))){
+    const o=monsters().filter(x=>x!==u); return o.length===1 && P.cards[o[0]].pos!=="set" && syn(o[0]) && ATTR(P.cards[o[0]].n)===m[1] && RACE(P.cards[o[0]].n)===m[2] ? "" : bad(); }
+  if((m=/If a Level (\d+) or higher (\w+) monster is on the field/i.exec(head))) return up.some(x=>lvl(x)>=+m[1] && ATTR(P.cards[x].n)===m[2])? "" : bad();
+  if(/If a Synchro Monster is on the field/i.test(head)) return up.some(syn)? "" : bad();
+  if((m=/If you control a Level (\d+) or higher Synchro Monster/i.exec(head))) return up.some(x=>syn(x)&&lvl(x)>=+m[1])? "" : bad();
+  // every Fiend Tuner in this deck has 1500 or less ATK
+  if(/you control a Fiend Tuner/i.test(head)) return up.some(fTun)? "" : bad()+(/opponent controls/i.test(head)?" (There’s no opponent in free play, so you need the Fiend Tuner.)":"");
+  return "";
+}
+function setLock(src,text){
+  const words=text.trim().split(/\s+/);
+  if(P.lock){ P.lock.words=[...new Set(P.lock.words.concat(words))]; P.lock.text=P.lock.words.join(" "); P.lock.src+=" and "+src; }
+  else P.lock={src,text:text.trim(),words};
+  return ` From now on this turn you can only Special Summon ${P.lock.text} monsters from the Extra Deck.`;
+}
+// "You cannot Special Summon from the Extra Deck ... the turn you activate (either of) this card's effect(s)"
+function turnLock(n,e){
+  const all=effectsOf(n);
+  for(const x of all){ const m=/cannot Special Summon monsters from the Extra Deck,?(?: for the rest of this turn,?)? except ([^.,]+?) Monsters?,? the turn you activate (either of this card's effects|this effect)/i.exec(x.text)
+      || (/^You cannot Special Summon monsters from the Extra Deck the turn you activate (this effect)/i.test(x.text) && /except ([^.,]+?) Monsters?/i.exec(x.text));
+    if(!m) continue;
+    const either=/either/i.test(x.text);
+    if(either || (e && e.i===x.i-1)) return setLock(n,m[1]);
+  }
+  return "";
+}
+function optCheck(n,ok,e){
   const d=info(n), txt=d?d.desc:"", k=P.used[n]||0;
   const each=/You can only use each effect of/i.test(txt);
   const hard=!each && /You can only (use this effect of|activate 1 )/i.test(txt);
   if(hard && k>=1) return no(`${n} can only be used once per turn, and you already used it this turn.`);
-  if(each && k>=2) return no(`You’ve already used ${n}’s effects this turn. Each one works once per turn.`);
-  if(each && k===1){
-    return sheet(n,null,`Each of ${n}’s effects can only be used once per turn. Is this a different effect from the one you already used?`,
-      [["Yes, it’s a different effect",()=>{ P.used[n]=2; ok(); }]]);
+  if(each){
+    P.usedE=P.usedE||{}; const done=P.usedE[n]||(P.usedE[n]=[]);
+    const list=effectsOf(n).filter(x=>x.activated);
+    const mark=i=>{ done.push(i); P.used[n]=k+1; ok(); };
+    if(e) return done.includes(e.i) ? no(`You already used that effect of ${n} this turn. Each of its effects works once per turn.`) : mark(e.i);
+    if(list.length<=1) return list.length && done.includes(list[0].i) ? no(`You already used ${n}’s effect this turn.`) : mark(list.length?list[0].i:-1);
+    if(list.every(x=>done.includes(x.i))) return no(`You’ve already used all of ${n}’s effects this turn. Each one works once per turn.`);
+    const short=t=>{ const x=t.replace(/^[^:]*:\s*/,""); return x.length>70? x.slice(0,68)+"…" : x; };
+    return sheet(n,null,"Which effect are you using? Each one works once per turn.",
+      list.map(x=>[done.includes(x.i)? "Already used this turn: "+short(x.text) : short(x.text), ()=>mark(x.i), done.includes(x.i)]));
   }
   P.used[n]=k+1; ok();
 }
@@ -1025,16 +1154,23 @@ function trySpecial(u,zone,pos,how){
     how = own? "own" : grant? "other" : null;
   }
   if(how==="own" && own){
-    return optCheck(c.n,()=>{
+    const ce=condErr(u,own); if(ce) return no(ce);
+    const way=/You can only Special Summon "[^"]+" once per turn this way/i.test(info(c.n).desc);
+    if(way && P.used["ss:"+c.n]) return no(`You can only Special Summon ${c.n} this way once per turn, and you already did this turn.`);
+    const go=()=>{
+      if(way) P.used["ss:"+c.n]=1;
       place(u,z,{pos,placedTurn:P.turn});
       let extra="";
-      const m=/cannot Special Summon monsters from the Extra Deck for the rest of this turn, except ([^.,]+?) monsters/i.exec(own.text);
-      if(m){ P.lock={src:c.n,text:m[1].trim(),words:m[1].trim().split(/\s+/)}; extra=` From now on this turn you can only Special Summon ${P.lock.text} monsters from the Extra Deck.`; }
+      const m=/cannot Special Summon monsters from the Extra Deck for the rest of this turn, except ([^.,]+?) monsters/i.exec(own.text)
+        || /If Summoned this way, you cannot Special Summon monsters from the Extra Deck for the rest of this turn, except ([^.,]+?) monsters/i.exec(info(c.n).desc);
+      if(m) extra=setLock(c.n,m[1]);
+      extra+=turnLock(c.n,own);
       if(own.cost) owe(u,own);
       const gt=grantFrom(c.n,own.text);
       say(`Special Summoned ${c.n} from ${from} with its own effect, in ${pos==="atk"?"Attack":"Defense"} Position.${extra}${gt}`);
       renderPlay();
-    });
+    };
+    return /You can only use (each effect|this effect) of/i.test(info(c.n).desc)? optCheck(c.n,go,own) : go();
   }
   if(how==="other"){
     const g = grant || (src==="gy"? permCheck(u,"gy","field").g : (P.grants||[]).find(g=>g.dest==="field"&&(g.from||[]).includes("hand")&&g.except!==c.n&&fitsPhrase(c.n,g.phrase)));
@@ -1044,6 +1180,12 @@ function trySpecial(u,zone,pos,how){
     say(`Special Summoned ${c.n} from ${from} with ${g?g.src+"’s":"a card’s"} effect, in ${pos==="atk"?"Attack":"Defense"} Position.`);
     return renderPlay();
   }
+  if(src==="hand"){
+    const ce=own? condErr(u,own) : "";
+    return no(ce || (P.normalUsed
+      ? `You’ve already used your Normal Summon this turn, and no card effect is letting you Special Summon ${c.n} from your hand right now.`
+      : `No card effect is letting you Special Summon ${c.n} from your hand right now. To Normal Summon it instead, pick Normal Summon in “Play cards as”.`));
+  }
   place(u,z,{pos,placedTurn:P.turn});
   say(`Special Summoned ${c.n} from ${from} in ${pos==="atk"?"Attack":"Defense"} Position. Remember this needs a card effect that allows it.`);
   renderPlay();
@@ -1051,6 +1193,16 @@ function trySpecial(u,zone,pos,how){
 function startSynchro(u,zone){
   const c=P.cards[u], d=info(c.n);
   if(P.lock && !matchWords(c.n,P.lock.words)) return no(`You used ${P.lock.src}’s effect, so you can only Special Summon ${P.lock.text} monsters from the Extra Deck this turn.`);
+  const xg=(P.grants||[]).find(g=>g.dest==="field"&&(g.from||[]).includes("extra")&&fitsPhrase(c.n,g.phrase));
+  if(xg){
+    if(zone && occ(zone)) return no("That zone already has a card in it.");
+    if(zone && EMZ.includes(zone) && EMZ.some(z=>z!==zone && occ(z))) return no("You can only use one Extra Monster Zone.");
+    const z = zone || (!EMZ.some(occ) ? "emzL" : freeMZ());
+    if(!z) return no("You have no open zone for that monster.");
+    useGrant(xg); place(u,z,{pos:"atk",placedTurn:P.turn,proper:true});
+    say(`Special Summoned ${c.n} from your Extra Deck with ${xg.src}’s effect. It counts as a Synchro Summon, and no materials were needed.`);
+    renderPlay(); return setTimeout(()=>fx(z,"Synchro Summon"),350);
+  }
   const faceUp=monsters().filter(m=>P.cards[m].pos!=="set");
   if(faceUp.length<2) return no("A Synchro Summon needs a Tuner and at least one other face-up monster on your field.");
   P.synZone=zone||null; startSynchroSelect(u, d);
@@ -1059,21 +1211,28 @@ function startSynchroSelect(u,d){
   const n=P.cards[u].n;
   startSelect({kind:"synchro",need:null,title:`Tap the materials for ${n}${d&&d.level?` (Level ${d.level})`:""}, then Confirm.`,done:m=>finishSynchro(u,m)});
 }
-function finishSynchro(u,mats){
-  const n=P.cards[u].n, d=info(n);
+function synErr(n,mats){
+  const d=info(n);
   const req=d? d.desc.split("\n")[0] : "";
   const tm=/^\s*(\d+)\s+Tuners?/i.exec(req), needT=tm? +tm[1] : 1;
   const tun=mats.filter(m=>tuner(P.cards[m].n)), non=mats.filter(m=>tuner(P.cards[m].n)===false);
-  if(d && tun.length!==needT) return no(`${n} needs exactly ${needT} Tuner${needT>1?"s":""} as material. You picked ${tun.length}.`);
-  if(d && non.length<1) return no(`${n} also needs at least 1 non-Tuner monster as material.`);
+  if(d && tun.length!==needT) return `${n} needs exactly ${needT} Tuner${needT>1?"s":""} as material. You picked ${tun.length}.`;
+  if(d && non.length<1) return `${n} also needs at least 1 non-Tuner monster as material.`;
   const named=/\+\s*"([^"]+)"/.exec(req);
-  if(named && !non.some(m=>P.cards[m].n===named[1])) return no(`${n} needs “${named[1]}” as one of its materials.`);
+  if(named && !non.some(m=>nameIs(m,named[1]))) return `${n} needs “${named[1]}” as one of its materials.`;
   const nw=/non-Tuners?\s+(.*?)\s*[Mm]onsters?/.exec(req.split("+").slice(1).join("+"));
   if(nw && nw[1].trim()){ const words=nw[1].trim().split(/\s+/);
-    if(!non.every(m=>matchWords(P.cards[m].n,words))) return no(`${n}’s non-Tuner material has to be a ${nw[1].trim()} monster.`); }
+    if(!non.every(m=>matchWords(P.cards[m].n,words))) return `${n}’s non-Tuner material has to be a ${nw[1].trim()} monster.`; }
+  if(/\+\s*1\s+non-Tuner/i.test(req) && non.length!==1) return `${n} uses exactly 1 non-Tuner monster as material.`;
+  if(named && non.length!==1) return `${n} uses exactly “${named[1]}” plus its Tuners.`;
   const lv=mats.map(lvl);
   if(d && d.level && lv.every(x=>x!=null)){ const sum=lv.reduce((a,b)=>a+b,0);
-    if(sum!==d.level) return no(`Those materials add up to Level ${sum}, but ${n} is Level ${d.level}. They have to match exactly.`); }
+    if(sum!==d.level) return `Those materials add up to Level ${sum}, but ${n} is Level ${d.level}. They have to match exactly.`; }
+  return "";
+}
+function finishSynchro(u,mats){
+  const n=P.cards[u].n, d=info(n);
+  const er=synErr(n,mats); if(er) return no(er);
   const occX=k=>{ const o=occ(k); return o && !mats.includes(o); };
   const want=P.synZone;
   const wantOK = want && !occX(want) && !(EMZ.includes(want) && EMZ.some(z=>z!==want && occX(z)));
@@ -1144,16 +1303,19 @@ function useEffect(u,pick){
     return sheet(c.n,u,"Which effect are you using?",effs.map(x=>[short(x.text),()=>useEffect(u,x)]));
   }
   e=e||effs[0]||null;
+  const ce=condErr(u,e); if(ce) return no(ce);
+  if(e && /except the turn this card was sent to the GY/i.test(e.text) && c.where==="gy" && c.gyTurn===P.turn) return no(`You can’t use that effect of ${c.n} the same turn it was sent to the GY.`);
   optCheck(c.n,()=>{
     let extra="";
     const m=(e||d) && /cannot Special Summon monsters from the Extra Deck for the rest of this turn, except ([^.,]+?) monsters/i.exec(e? e.text : d.desc);
-    if(m && isZone(c.where)){ P.lock={src:c.n,text:m[1].trim(),words:m[1].trim().split(/\s+/)}; extra=` From now on this turn you can only Special Summon ${P.lock.text} monsters from the Extra Deck.`; }
+    if(m && (isZone(c.where)||c.where==="gy"||c.where==="hand")) extra=setLock(c.n,m[1]);
+    extra+=turnLock(c.n,e);
     const el=pEls[u]; if(isZone(c.where)||c.where==="hand"){ el.classList.add("act"); setTimeout(()=>el.classList.remove("act"),1500); }
     const from={hand:" from your hand",gy:" from the GY",ban:" while banished"}[c.where]||"";
     if(e && e.cost) owe(u,e);
     const gt=grantFrom(c.n,e?e.text:null);
     say(`Used ${c.n}’s effect${from}. Move the cards it affects yourself.${extra}${gt}`); renderPlay();
-  });
+  },e);
 }
 function changePos(u){
   if(P.owed||P.lvOwed) return no(OWE_MSG);
@@ -1255,7 +1417,7 @@ function sheet(n,u,msg,acts){
   const d=DB[n]||{}, box=document.getElementById("mbox"); box.className="sheet";
   box.innerHTML=`<div class="hd">${d.small?`<img src="${d.small}" alt="">`:""}<div><h3>${esc(n)}</h3>${msg?`<p>${esc(msg)}</p>`:""}</div></div>`;
   const add=(label,fn,cls)=>{ const b=document.createElement("button"); b.textContent=label; if(cls) b.className=cls; b.onclick=()=>{ closeCard(); fn(); }; box.appendChild(b); };
-  acts.forEach(([l,f])=>add(l,f));
+  acts.forEach(([l,f,off])=>{ add(l,f); if(off){ const b=box.lastChild; b.disabled=true; b.classList.add("used"); } });
   add("Card details",()=>openCard(n));
   add("Cancel",()=>{},"cancel");
   modal.classList.add("on");
@@ -1304,13 +1466,14 @@ document.getElementById("pNext").onclick=()=>{
   if(P.owed||P.lvOwed) return no(OWE_MSG);
   const h=Object.values(P.cards).filter(c=>c.where==="hand").length;
   if(h>6) return no(`You have ${h} cards in hand. Discard down to 6 before ending your turn.`);
-  P.turn++; P.normalUsed=false; P.used={}; P.lock=null; P.grants=[]; setDropMode("normal");
+  P.turn++; P.normalUsed=false; P.used={}; P.usedE={}; P.lock=null; P.grants=[]; setDropMode("normal");
   if(!P.deck.length){ say(`Turn ${P.turn}. Your Deck is empty, so you can’t draw. In a real duel, you’d lose here.`); return renderPlay(); }
   const u=P.deck[P.deck.length-1]; place(u,"hand");
   say(`Turn ${P.turn}. You drew ${P.cards[u].n}. Your Normal Summon and once-per-turn effects are available again.`);
   renderPlay();
 };
 document.getElementById("pNew").onclick=()=>newGame();
+document.getElementById("pWhat").onclick=whatNow;
 document.getElementById("pBan").onclick=()=>openPlayPile("ban");
 
 // ===== Walkthrough builder: any opening hand, then as many turns as you like =====
