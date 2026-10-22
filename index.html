@@ -311,11 +311,12 @@ async function loadDB(){
     const r = await fetch(API + names.map(encodeURIComponent).join("|"));
     const j = await r.json(); (j.data||[]).forEach(put);
   }catch(e){}
-  const missing = names.filter(n=>!DB[n]);
-  await Promise.all(missing.map(async n=>{
+  // One at a time, spaced out: the site blocks phones that send more than 20 requests a second.
+  for(const n of names.filter(n=>!DB[n])){
     try{ const r = await fetch(API+encodeURIComponent(n)); const j = await r.json(); if(j.data) put(j.data[0]); }catch(e){}
-  }));
-  try{ localStorage.setItem(CACHE_KEY, JSON.stringify(DB)); }catch(e){}
+    await new Promise(ok=>setTimeout(ok,150));
+  }
+  if(Object.keys(DB).length){ try{ localStorage.setItem(CACHE_KEY, JSON.stringify(DB)); }catch(e){} }
 }
 
 const stage = document.getElementById("stage");
@@ -1740,7 +1741,16 @@ let rt; window.addEventListener("resize",()=>{ clearTimeout(rt); rt=setTimeout((
   await loadDB();
   applyImages(); applyPImages(); if(mode==="play") renderPlay(false);
   const got=Object.keys(DB).length;
-  document.getElementById("status").textContent = got ? "" : "Couldn’t reach the card database. Connect to the internet once to load card images.";
+  const st=document.getElementById("status");
+  st.textContent = got ? "" : "Couldn’t reach the card database. Tap here to try again.";
+  st.style.cursor = got ? "" : "pointer";
+  st.onclick = got ? null : async ()=>{
+    st.textContent="Loading card images…"; await loadDB();
+    applyImages(); applyPImages(); if(mode==="play") renderPlay(false); if(mode==="deck") buildDeck();
+    const ok=Object.keys(DB).length;
+    st.textContent = ok ? "" : "Still couldn’t reach the card database. Tap here to try again.";
+    if(ok){ st.onclick=null; st.style.cursor=""; }
+  };
   if(mode==="deck") buildDeck();
 })();
 
