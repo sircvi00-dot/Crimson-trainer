@@ -135,7 +135,11 @@ header{flex-wrap:wrap}
 .selbar p{margin:0;font-size:15px}
 .pstat{font-size:14px;color:var(--mute)}
 .pstatrow{display:flex;align-items:center;gap:9px}
-.owe{display:none;flex:none;vertical-align:-1px;margin-right:8px;width:13px;height:13px;border-radius:50%;background:#ddd8d0;border:1px solid rgba(0,0,0,.2);transition:background .3s,box-shadow .3s}
+.bigcard{position:fixed;inset:0;z-index:300;background:rgba(20,16,16,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:16px;cursor:zoom-out}
+.bigcard img{max-width:100%;max-height:calc(100% - 40px);border-radius:10px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+.bigcard p{color:#fff;opacity:.75;margin:10px 0 0;font-size:14px}
+#mImg{cursor:zoom-in}
+.owe{display:none;flex:none;vertical-align:-1px;margin-right:8px;width:13px;height:13px;border-radius:50%;background:#bdb5ab;border:1px solid rgba(0,0,0,.45);transition:background .3s,box-shadow .3s}
 body.playing .owe{display:inline-block}
 .owe.on{background:#ff3b30;border-color:#ffb3ad;box-shadow:0 0 6px 2px rgba(255,59,48,.75);animation:owe 1.1s ease-in-out infinite}
 @keyframes owe{50%{box-shadow:0 0 14px 5px rgba(255,59,48,.9)}}
@@ -196,7 +200,7 @@ body.playing .owe{display:inline-block}
         <div class="k" style="font-family:var(--display);color:var(--gold)">What’s your next move?</div>
         <div class="opts" id="opts"></div>
         <div class="fbk" id="fbk"></div>
-        <div class="ctrls"><button id="pReset">Start over</button><button id="bRand2">🎲 Random hand</button><button id="bTurn2" class="primary" style="display:none">Next turn ▶</button><span class="sp" id="score"></span></div>
+        <div class="ctrls"><button id="qUndo" disabled>↶ Undo</button><button id="pReset">Start over</button><button id="bRand2">🎲 Random hand</button><button id="bTurn2" class="primary" style="display:none">Next turn ▶</button><span class="sp" id="score"></span></div>
       </div>
       <div id="playCtrls" style="display:none" class="panel">
         <div id="selBar" class="selbar" style="display:none"><p id="selT"></p>
@@ -220,6 +224,8 @@ body.playing .owe{display:inline-block}
 <script>
 const API = "https://db.ygoprodeck.com/api/v7/cardinfo.php?name=";
 const CACHE_KEY = "cpf-cards-v2";
+const BAKED = {"Synkron Resonator":{"type":"Tuner Monster","level":1,"attribute":"DARK","race":"Fiend","id":77360173,"desc":"If a Synchro Monster is on the field, you can Special Summon this card (from your hand). You can only Special Summon \"Synkron Resonator\" once per turn this way. If this card is sent from the field to the GY: You can target 1 \"Resonator\" monster in your GY, except \"Synkron Resonator\"; add it to your hand."},"Red Resonator":{"type":"Tuner Monster","level":2,"attribute":"FIRE","race":"Fiend","id":40975574,"desc":"When this card is Normal Summoned: You can Special Summon 1 Level 4 or lower monster from your hand. When this card is Special Summoned: You can target 1 face-up monster on the field; gain LP equal to its ATK. You can only use this effect of \"Red Resonator\" once per turn."},"Crimson Resonator":{"type":"Tuner Monster","level":2,"attribute":"DARK","race":"Fiend","id":34761841,"desc":"If you control no monsters: You can Special Summon this card from your hand. If the only other monster you control is exactly 1 DARK Dragon Synchro Monster: You can Special Summon up to 2 \"Resonator\" monsters from your hand or Deck, except \"Crimson Resonator\". You can only use each effect of \"Crimson Resonator\" once per turn. You cannot Special Summon monsters from the Extra Deck, except DARK Dragon Synchro Monsters, the turn you activate either of this card's effects."},"Vision Resonator":{"type":"Tuner Monster","level":2,"attribute":"DARK","race":"Fiend","id":98396890,"desc":"If a Level 5 or higher DARK monster is on the field, you can Special Summon this card (from your hand). You can only Special Summon \"Vision Resonator\" once per turn this way. If this card is sent to the GY: You can add 1 Spell/Trap that mentions \"Red Dragon Archfiend\" from your Deck to your hand. You can only use this effect of \"Vision Resonator\" once per turn."},"Red Lotus King, Flame Crime":{"type":"Effect Monster","level":3,"attribute":"FIRE","race":"Fiend","id":19299793,"desc":"During the Main Phase, if you control a Fiend Tuner, or your opponent controls a Special Summoned monster (Quick Effect): You can Special Summon this card from your hand. If this card is Special Summoned: You can inflict 400 damage to your opponent for each FIRE monster you control with different names. If this card is sent to the GY as Synchro Material: You can send 1 Normal Trap from your Deck to the GY. You can only use each effect of \"Red Lotus King, Flame Crime\" once per turn."},"Creation Resonator":{"type":"Tuner Monster","level":3,"attribute":"WIND","race":"Fiend","id":5780210,"desc":"If you control a Level 8 or higher Synchro Monster, you can Special Summon this card (from your hand)."},"Soul Resonator":{"type":"Tuner Monster","level":3,"attribute":"FIRE","race":"Fiend","id":62991792,"desc":"If this card is Normal or Special Summoned: You can add 1 Level 4 or lower Fiend monster from your Deck to your hand, except \"Soul Resonator\", also you cannot Special Summon monsters from the Extra Deck for the rest of this turn, except DARK Synchro Monsters. If a card(s) you control would be destroyed by card effect, while you control \"Red Dragon Archfiend\" or a Synchro Monster that mentions it, you can banish this card from your GY instead. You can only use each effect of \"Soul Resonator\" once per turn."},"Wandering King Wildwind":{"type":"Effect Monster","level":4,"attribute":"DARK","race":"Fiend","id":52589809,"desc":"If you control a Fiend Tuner with 1500 or less ATK, you can Special Summon this card (from your hand). If Summoned this way, you cannot Special Summon monsters from the Extra Deck for the rest of this turn, except Synchro Monsters. During your Main Phase, except the turn this card was sent to the GY: You can banish this card from your GY; add 1 Fiend Tuner with 1500 or less ATK from your Deck to your hand."},"Bone Archfiend":{"type":"Effect Monster","level":4,"attribute":"DARK","race":"Fiend","id":25784595,"desc":"If this card is in your hand or GY: You can send 1 other card from your hand or field to the GY; Special Summon this card, also you cannot Special Summon monsters from the Extra Deck for the rest of this turn, except DARK Dragon Synchro Monsters. You can target 1 face-up monster you control that has a Level; send 1 Fiend Tuner from your hand or Deck to the GY, and if you do, increase or decrease that monster's Level by 1. You can only use each effect of \"Bone Archfiend\" once per turn."},"Resonator Call":{"type":"Spell Card","race":"Normal","id":23008320,"desc":"Add 1 \"Resonator\" monster from your Deck to your hand."},"Crimson Gaia":{"type":"Spell Card","race":"Continuous","id":98173209,"desc":"During your Main Phase: You can add 1 \"Red Dragon Archfiend\" or 1 card that mentions it from your Deck or GY to your hand, except \"Crimson Gaia\". When your \"Red Dragon Archfiend\" declares an attack: You can change all monsters your opponent controls to face-down Defense Position. If a monster(s) on the field is destroyed by battle or card effect: You can Special Summon 1 \"Red Dragon Archfiend\" from your GY. You can only use each effect of \"Crimson Gaia\" once per turn."},"Resonator Command":{"type":"Spell Card","race":"Quick-Play","id":8559524,"desc":"Discard 1 \"Resonator\" monster; add 1 Level 4 or lower Fiend monster from your Deck to your hand. You can only activate 1 \"Resonator Command\" per turn."},"Absolute Powerforce":{"type":"Spell Card","race":"Quick-Play","id":51779204,"desc":"Target 1 \"Red Dragon Archfiend\" you control; if that monster you control battles an opponent's monster this turn, apply these effects until the end of the Damage Step.\n● It gains 1000 ATK.\n● Your opponent cannot activate cards or effects.\n● If it attacks a Defense Position monster, inflict piercing battle damage to your opponent.\n● Any battle damage your opponent takes from that battle is doubled."},"Red Reign":{"type":"Trap Card","race":"Normal","id":5376159,"desc":"If you control a Level 8 or higher Synchro Monster: Banish all monsters on the field, except the monster(s) with the highest Level, also the remaining face-up monsters on the field are unaffected by other card effects, except their own, until the end of this turn. If a DARK Dragon Synchro Monster is Synchro Summoned to your field while this card is in your GY: You can add this card to your hand. You can only use this effect of \"Red Reign\" once per turn."},"Fiendish Golem":{"type":"Trap Card","race":"Normal","id":24662957,"desc":"Target 1 monster on the field with 2000 or more ATK; banish it (until the End Phase of the next turn), then if you activated this card while you controlled \"Red Dragon Archfiend\" or a Synchro Monster that mentions it, you can Set 1 \"Fiendish Chain\" directly from your Deck or GY."},"Fiendish Chain":{"type":"Trap Card","race":"Continuous","id":50078509,"desc":"Activate this card by targeting 1 Effect Monster on the field; negate the effects of that face-up monster while it is on the field, also that face-up monster cannot attack. When it is destroyed, destroy this card."},"Red Zone":{"type":"Trap Card","race":"Continuous","id":50056656,"desc":"When your opponent activates a card or effect while you control \"Red Dragon Archfiend\" or a Synchro Monster that mentions it: You can target 1 card on the field; destroy it. You can target 1 of your banished DARK Dragon Synchro Monsters; Special Summon it. You can only use each effect of \"Red Zone\" once per turn."},"Red Rising Dragon":{"type":"Synchro Monster","level":6,"attribute":"DARK","race":"Dragon","id":66141736,"desc":"1 Fiend Tuner + 1+ non-Tuner monsters\nWhen this card is Synchro Summoned: You can target 1 \"Resonator\" monster in your GY; Special Summon it. You cannot Special Summon monsters from the Extra Deck the turn you activate this effect, except DARK Dragon Synchro Monsters. During your Main Phase, except the turn this card was sent to the GY: You can banish this card from your GY, then target 2 Level 1 \"Resonator\" monsters in your GY; Special Summon both."},"Kuibelt the Blade Dragon":{"type":"Synchro Monster","level":7,"attribute":"DARK","race":"Dragon","id":87837090,"desc":"1 Tuner + 1+ non-Tuner monsters\nIf this card is Synchro Summoned: You can target 1 card on the field; destroy it. If this card on the field is destroyed: You can target 1 face-up monster on the field; that monster cannot attack until the end of your opponent's turn. You can only use each effect of \"Kuibelt the Blade Dragon\" once per turn."},"Red Dragon Archfiend":{"type":"Synchro Monster","level":8,"attribute":"DARK","race":"Dragon","id":70902743,"desc":"1 Tuner + 1+ non-Tuner monsters\nAfter damage calculation, if this card attacked an opponent's Defense Position monster: Destroy all Defense Position monsters your opponent controls. Once per turn, during your End Phase: Destroy all other monsters you control that did not declare an attack this turn. This card must be face-up on the field to activate and to resolve this effect."},"Scarred Dragon Archfiend":{"type":"Synchro Monster","level":8,"attribute":"DARK","race":"Dragon","id":87451661,"desc":"1 Tuner + 1+ non-Tuner DARK monsters\nThis card's name becomes \"Red Dragon Archfiend\" while on the field or in the GY. If this card is sent from the Monster Zone to the GY: You can Special Summon 1 \"Red Dragon Archfiend\" from your Extra Deck (this is treated as a Synchro Summon), then, if this card was sent to the GY as Synchro Material for a DARK Dragon Synchro Monster, you can destroy all Attack Position monsters your opponent controls. You can only use this effect of \"Scarred Dragon Archfiend\" once per turn."},"Hot Red Dragon Archfiend Abyss":{"type":"Synchro Monster","level":9,"attribute":"DARK","race":"Dragon","id":9753964,"desc":"1 Tuner + 1 non-Tuner DARK Dragon Synchro Monster\n(Quick Effect): You can target 1 face-up card your opponent controls; negate its effects until the end of this turn. When this card inflicts battle damage to your opponent: You can target 1 Tuner in your GY; Special Summon it in Defense Position. You can only use each effect of \"Hot Red Dragon Archfiend Abyss\" once per turn."},"Hot Red Dragon Archfiend Bane":{"type":"Synchro Monster","level":10,"attribute":"DARK","race":"Dragon","id":36857073,"desc":"1 Tuner + 1 non-Tuner DARK Dragon Synchro Monster\nYou can Tribute 1 monster, then target 1 \"Red Dragon Archfiend\" monster in your GY; Special Summon it. When this card inflicts battle damage to your opponent: You can Special Summon 2 Tuners with the same Level (1 from your Deck and 1 from your GY) in Defense Position. You can only use each effect of \"Hot Red Dragon Archfiend Bane\" once per turn."},"Red Nova Dragon":{"type":"Synchro Monster","level":12,"attribute":"DARK","race":"Dragon","id":97489701,"desc":"2 Tuners + \"Red Dragon Archfiend\"\nGains 500 ATK for each Tuner in your GY. Cannot be destroyed by an opponent's card effects. When an opponent's monster declares an attack: You can target the attacking monster; banish this card, and if you do, negate that attack. Once per turn, during the End Phase, if this card was banished by its effect this turn: Special Summon this banished card."}};
+const IMG = id=>"https://images.ygoprodeck.com/images/cards/"+id+".jpg", IMG_S = id=>"https://images.ygoprodeck.com/images/cards_small/"+id+".jpg";
 
 const DECK = {
   "Monsters":[[3,"Synkron Resonator"],[3,"Red Resonator"],[3,"Crimson Resonator"],[1,"Vision Resonator"],[3,"Red Lotus King, Flame Crime"],[1,"Creation Resonator"],[3,"Soul Resonator"],[3,"Wandering King Wildwind"],[3,"Bone Archfiend"]],
@@ -304,19 +310,14 @@ const STEPS = [
 
 let DB = {};
 async function loadDB(){
-  const names = [...new Set(Object.values(DECK).flat().map(x=>x[1]))];
-  try{ const c = JSON.parse(localStorage.getItem(CACHE_KEY)||"null"); if(c && names.every(n=>c[n])){ DB=c; return; } }catch(e){}
-  const put = d => { DB[d.name] = {img:d.card_images[0].image_url, small:d.card_images[0].image_url_small, desc:d.desc, type:d.type, level:d.level, attribute:d.attribute, race:d.race}; };
-  try{
-    const r = await fetch(API + names.map(encodeURIComponent).join("|"));
-    const j = await r.json(); (j.data||[]).forEach(put);
-  }catch(e){}
-  // One at a time, spaced out: the site blocks phones that send more than 20 requests a second.
-  for(const n of names.filter(n=>!DB[n])){
-    try{ const r = await fetch(API+encodeURIComponent(n)); const j = await r.json(); if(j.data) put(j.data[0]); }catch(e){}
-    await new Promise(ok=>setTimeout(ok,150));
-  }
-  if(Object.keys(DB).length){ try{ localStorage.setItem(CACHE_KEY, JSON.stringify(DB)); }catch(e){} }
+  // Card text, Levels and types are built into the app, so nothing depends on the card database website.
+  for(const n in BAKED){ const b=BAKED[n]; DB[n]={img:IMG(b.id), small:IMG_S(b.id), desc:b.desc, type:b.type, level:b.level, attribute:b.attribute, race:b.race}; }
+}
+// Download every picture at the same time, then show them all together.
+function preloadImages(){
+  const urls=[]; for(const n in DB){ urls.push(DB[n].img, DB[n].small); }
+  const one=u=>new Promise(ok=>{ const im=new Image(); const t=setTimeout(()=>ok(false),8000); im.onload=()=>{ clearTimeout(t); ok(true); }; im.onerror=()=>{ clearTimeout(t); ok(false); }; im.src=u; });
+  return Promise.all(urls.map(one));
 }
 
 const stage = document.getElementById("stage");
@@ -487,25 +488,33 @@ document.addEventListener("keydown",e=>{
   else if(e.key===" "){ e.preventDefault(); bPlay.click(); }
 });
 
-let mode="watch", right=0, tries=0;
+let mode="watch", right=0, tries=0, qHist=[], qTimer=null;
+function qUndoBtn(){ const b=document.getElementById("qUndo"); if(b) b.disabled=!qHist.length; }
+function qUndo(){
+  const h=qHist.pop(); if(!h) return; clearTimeout(qTimer);
+  right=h.right; tries=h.tries; go(h.cur); ask(); qUndoBtn();
+  const fb=document.getElementById("fbk"); fb.className="fbk"; fb.textContent="Went back one move. Try it again.";
+}
+function qReset(){ qHist=[]; clearTimeout(qTimer); qUndoBtn(); }
 function shuffle(a){ for(let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]]; } return a; }
 function ask(){
   const opts=document.getElementById("opts"), fb=document.getElementById("fbk"); opts.innerHTML="";
   document.getElementById("score").textContent = tries ? `First-try correct: ${right} of ${tries}` : "";
   if(cur>=STEPS.length-1){ fb.className="fbk ok"; fb.textContent="Turn complete. Tap Next turn to keep going, or start over to run it again."; return; }
   const nx=STEPS[cur+1]; let missed=false;
-  if(nx.auto){ fb.className="fbk"; fb.textContent=nx.opp?"Your opponent takes their turn…":"Drawing a card…"; go(cur+1); setTimeout(ask,1800); return; }
+  qUndoBtn();
+  if(nx.auto){ fb.className="fbk"; fb.textContent=nx.opp?"Your opponent takes their turn…":"Drawing a card…"; go(cur+1); qTimer=setTimeout(ask,1800); return; }
   shuffle([nx.q, ...nx.w]).forEach(t=>{
     const b=document.createElement("button"); b.textContent=t;
     b.onclick=()=>{
-      if(t===nx.q){ tries++; if(!missed) right++; fb.className="fbk ok"; fb.textContent="Correct."; go(cur+1); setTimeout(ask, 900); }
+      if(t===nx.q){ qHist.push({cur,right,tries}); if(qHist.length>300) qHist.shift(); tries++; if(!missed) right++; fb.className="fbk ok"; fb.textContent="Correct."; go(cur+1); qUndoBtn(); qTimer=setTimeout(ask, 900); }
       else { missed=true; b.classList.remove("bad"); void b.offsetWidth; b.classList.add("bad"); fb.className="fbk no"; fb.textContent="Not quite. "+nx.hint; }
     };
     opts.appendChild(b);
   });
 }
 function setMode(m){
-  mode=m; stop(); document.body.classList.toggle("playing",m==="play");
+  mode=m; stop(); qReset(); document.body.classList.toggle("playing",m==="play");
   ["Watch","Practice","Play","Deck"].forEach(x=>document.getElementById("t"+x).classList.toggle("on", x.toLowerCase()===m));
   document.getElementById("duelview").style.display = m==="deck" ? "none" : "";
   document.getElementById("deckview").style.display = m==="deck" ? "block" : "none";
@@ -526,6 +535,7 @@ document.getElementById("tPractice").onclick=()=>setMode("practice");
 document.getElementById("tDeck").onclick=()=>setMode("deck");
 document.getElementById("tPlay").onclick=()=>setMode("play");
 document.getElementById("pReset").onclick=()=>setMode("practice");
+document.getElementById("qUndo").onclick=qUndo;
 
 function buildDeck(){
   const v=document.getElementById("deckview"); v.innerHTML="";
@@ -548,7 +558,7 @@ function openCard(n,u){
     `<div class="lvrow">Level ★${lvl(u)}<button id="lvDn">−1</button><button id="lvUp">+1</button><span>for effects that change Levels</span></div>` : "";
   const textHTML = (ROLE[n]?`<div class="role">${ROLE[n]}</div>`:"") +
     `<div class="desc">${d.desc ? d.desc.replace(/</g,"&lt;") : "Card text loads when you’re online."}</div>`;
-  box.innerHTML = (d.img?`<img src="${d.img}" alt="${esc(n)}">`:`<div></div>`) +
+  box.innerHTML = (d.img?`<img src="${d.img}" alt="${esc(n)}" id="mImg" title="Tap to enlarge">`:`<div></div>`) +
     `<div class="mtext"><div class="mscroll"><h3>${esc(n)}</h3>${lvRow}<div id="mBody">${textHTML}</div></div>` +
     `<div class="mbtns"><button id="mCoach">💡 How to play it</button><button id="mClose">Close</button></div></div>`;
   let coach=false; const body=document.getElementById("mBody"), cb=document.getElementById("mCoach");
@@ -556,10 +566,16 @@ function openCard(n,u){
   if(lvRow){ const bump=k=>{ c.lvMod=(c.lvMod||0)+k; renderPlay(); say(`${n} is now Level ${lvl(u)}.`); openCard(n,u); };
     document.getElementById("lvDn").onclick=()=>bump(-1); document.getElementById("lvUp").onclick=()=>bump(1); }
   document.getElementById("mClose").onclick=closeCard;
+  const mi=document.getElementById("mImg"); if(mi) mi.onclick=()=>bigCard(d.img,n);
   modal.classList.add("on");
 }
+function bigCard(src,n){
+  const z=document.createElement("div"); z.className="bigcard";
+  z.innerHTML=`<img src="${src}" alt="${esc(n)}"><p>Tap anywhere to close</p>`;
+  z.onclick=()=>z.remove(); document.body.appendChild(z);
+}
 function closeCard(){ modal.classList.remove("on"); }
-modal.addEventListener("click",e=>{ if(e.target===modal) closeCard(); });
+modal.addEventListener("click",e=>{ if(e.target===modal && !(P&&P.lvOwed&&document.getElementById("mbox").className==="sheet")) closeCard(); });
 
 
 // ===== Coach tips: what to do and what not to do =====
@@ -675,7 +691,7 @@ function pstat(){
   if(P.lock) s += ` · Extra Deck: ${P.lock.text} only`;
   const gtx=grantText(); if(gtx) s += ` · Waiting: ${gtx}`;
   document.getElementById("pstat").textContent=s;
-  const ow=document.getElementById("owe"); ow.classList.toggle("on",!!P.owed); ow.setAttribute("aria-label",P.owed?"Something still needs to be done":"");
+  const ow=document.getElementById("owe"); ow.classList.toggle("on",!!(P.owed||P.lvOwed)); ow.setAttribute("aria-label",(P.owed||P.lvOwed)?"Something still needs to be done":"");
   document.getElementById("pBan").textContent=`Banished (${Object.values(P.cards).filter(c=>c.where==="ban").length})`;
 }
 
@@ -733,7 +749,7 @@ function makePEl(u){
 let lastTap={};
 function overBan(e){ return document.elementsFromPoint(e.clientX,e.clientY).some(x=>x.id==="pBan"); }
 function holdCard(u){
-  if(P.owed) return no(OWE_MSG);
+  if(P.owed||P.lvOwed) return no(OWE_MSG);
   const c=P.cards[u], w=c.where;
   if(w==="hand") return useEffect(u);
   if(isMonZone(w)) return c.pos==="set"? changePos(u) : useEffect(u);
@@ -795,6 +811,10 @@ function parseGrants(n,txt){
   const d=info(n); if(!d||!d.desc) return [];
   const out=[];
   (txt||d.desc).split(".").forEach(sent=>{
+    // "target 1 X in your GY; Special Summon it" / "add it to your hand"
+    const tg=/target (?:up to )?(\d+) (.+?) in your ((?:hand,? |Deck,? |or |and )*(?:GY|Graveyard))(?:,? except "([^"]+)")?\s*;(.*)$/i.exec(sent);
+    if(tg){ const rest=tg[5], dest= /Special Summon (?:it|them|both|that)/i.test(rest)?"field" : /add (?:it|them|both|that card)\b.*to your hand/i.test(rest)?"hand" : null;
+      if(dest) out.push({src:n, dest, left:+tg[1], phrase:tg[2].trim(), except:tg[4]||null, from:LOCW(tg[3]).filter(x=>x!=="field")}); }
     const parts=sent.split(";");
     (parts.length>1?parts.slice(1):parts).forEach(cl=>{
       const re=/\b(add|send|Special Summon|Set)\s+(?:up to\s+)?(\d+)\s+(.+?)\s+from your ([^,]*?\b(?:Deck|GY|Graveyard)\b[^,]*?)(?:\s+to (?:your hand|the GY)|\s+in\b|,|$)/ig;
@@ -828,6 +848,7 @@ function fitsPhrase(cand,phrase){
     else if(/monster|tuner/.test(al) && !mon) return false;
     if(/normal trap/.test(al) && d.race!=="Normal") return false;
     if(/\btuner\b/.test(al) && !/Tuner/.test(d.type)) return false;
+    const lx=/\blevel (\d+)\b(?! or)/.exec(al); if(lx && d.level!==+lx[1]) return false;
     const lv=/level (\d+) or (lower|higher)/.exec(al);
     if(lv){ if(d.level==null) return false; if(lv[2]==="lower"? d.level>+lv[1] : d.level<+lv[1]) return false; }
     for(const r of ["Fiend","Dragon","Warrior","Spellcaster","Machine","Zombie","Pyro"]) if(new RegExp("\\b"+r+"\\b").test(a.replace(/"[^"]*"/g,"")) && mon && d.race!==r) return false;
@@ -905,7 +926,7 @@ function effectsHere(u){
 
 // ---- Undo: every change to the duel is saved as one step ----
 let hist=[], lastState=null, restoring=false;
-function ser(){ return JSON.stringify({cards:P.cards,deck:P.deck,t:P.t,turn:P.turn,normalUsed:P.normalUsed,used:P.used,lock:P.lock,grants:P.grants||[],owed:P.owed||null,dm:dropMode}); }
+function ser(){ return JSON.stringify({cards:P.cards,deck:P.deck,t:P.t,turn:P.turn,normalUsed:P.normalUsed,used:P.used,lock:P.lock,grants:P.grants||[],owed:P.owed||null,lvOwed:P.lvOwed||null,dm:dropMode}); }
 function track(){
   if(restoring) return; const j=ser();
   if(lastState!==null && j!==lastState){ hist.push({s:lastState,cap:document.getElementById("cap").textContent}); if(hist.length>300) hist.shift(); }
@@ -914,7 +935,7 @@ function track(){
 function undo(){
   if(P.sel) endSelect();
   const h=hist.pop(); if(!h) return no("Nothing to undo yet.");
-  const o=JSON.parse(h.s); Object.assign(P,{cards:o.cards,deck:o.deck,t:o.t,turn:o.turn,normalUsed:o.normalUsed,used:o.used,lock:o.lock,grants:o.grants||[],owed:o.owed||null});
+  const o=JSON.parse(h.s); Object.assign(P,{cards:o.cards,deck:o.deck,t:o.t,turn:o.turn,normalUsed:o.normalUsed,used:o.used,lock:o.lock,grants:o.grants||[],owed:o.owed||null,lvOwed:o.lvOwed||null});
   setDropMode(o.dm||"normal"); lastState=h.s;
   restoring=true; renderPlay(); restoring=false;
   document.getElementById("pUndo").disabled=!hist.length;
@@ -1133,7 +1154,7 @@ function useEffect(u,pick){
   });
 }
 function changePos(u){
-  if(P.owed) return no(OWE_MSG);
+  if(P.owed||P.lvOwed) return no(OWE_MSG);
   const c=P.cards[u];
   if(c.placedTurn===P.turn) return no("You can’t change a monster’s battle position the turn it was Summoned or Set.");
   if(c.posTurn===P.turn) return no("You can only change a monster’s battle position once per turn.");
@@ -1155,6 +1176,7 @@ const FROM={hand:"from your hand",gy:"from your GY",deck:"from your Deck",extra:
 function dropAt(u,x,y,ban){
   const c0=P.cards[u];
   const k0=ban?"ban":zoneAt(x,y), inHand0=!ban && y>G.boardH;
+  if(P.lvOwed){ if(!inHand0 && !k0) return; if(k0===c0.where || (inHand0 && c0.where==="hand")) return; no(OWE_MSG); return lvSheet(); }
   if(P.owed){
     const dest= k0==="ban"?"ban" : k0==="gy"?"gy" : null;
     if(dest && pays(u,dest)) return payOwed(u,dest);
@@ -1166,7 +1188,9 @@ function dropAt(u,x,y,ban){
     const dest= inHand0?"hand" : k0==="gy"?"gy" : k0==="ban"?"ban" : (k0 && isZone(k0))?"field" : null;
     if(dest){ const r=deckCheck(u,dest); if(r.err) return no(r.err);
       const res=dropInner(u,x,y,ban);
-      if(P.cards[u].where!=="deck"){ useGrant(r.g); renderPlay(); }
+      if(P.cards[u].where!=="deck"){ useGrant(r.g);
+        if(r.g.src==="Bone Archfiend" && dest==="gy"){ P.lvOwed={src:"Bone Archfiend",sent:P.cards[u].n}; renderPlay(); setTimeout(lvSheet,350); }
+        else renderPlay(); }
       return res; }
   }
   if(c0.where==="gy"){
@@ -1178,7 +1202,7 @@ function dropAt(u,x,y,ban){
   return dropInner(u,x,y,ban);
 }
 function dropInner(u,x,y,ban){
-  if(P.owed) return no(OWE_MSG);
+  if(P.owed||P.lvOwed) return no(OWE_MSG);
   const c=P.cards[u], n=c.n, w=c.where, ex=KIND[n]==="extra", mon=isMonKind(n);
   const k=ban?"ban":zoneAt(x,y), inHand=!ban && y>G.boardH, from=isZone(w)?"":" "+(FROM[w]||"");
   if(inHand){
@@ -1211,6 +1235,20 @@ function dropInner(u,x,y,ban){
 }
 
 // ---- Menus ----
+function lvSheet(){
+  const o=P.lvOwed; if(!o) return;
+  const mons=Object.keys(P.cards).filter(u=>{ const c=P.cards[u]; return isMonZone(c.where) && c.pos!=="set" && lvl(u)!=null; });
+  const d=DB[o.src]||{}, box=document.getElementById("mbox"); box.className="sheet";
+  box.innerHTML=`<div class="hd">${d.small?`<img src="${d.small}" alt="">`:""}<div><h3>${esc(o.src)}</h3><p>${esc(o.sent)} went to the GY, so now increase or decrease the Level of a face-up monster you control by 1.</p></div></div>`;
+  const add=(label,fn,cls)=>{ const b=document.createElement("button"); b.textContent=label; if(cls) b.className=cls; b.onclick=fn; box.appendChild(b); };
+  const done=(u,k)=>{ const c=P.cards[u]; c.lvMod=(c.lvMod||0)+k; P.lvOwed=null; closeCard(); renderPlay(); say(`${c.n} is now Level ${lvl(u)}. You can carry on.`); };
+  mons.forEach(u=>{ const c=P.cards[u], L=lvl(u);
+    if(L>1) add(`${c.n}: Level ${L} → ${L-1}`,()=>done(u,-1));
+    add(`${c.n}: Level ${L} → ${L+1}`,()=>done(u,1)); });
+  if(!mons.length){ P.lvOwed=null; say("You have no face-up monster with a Level, so there’s nothing to change."); renderPlay(); return; }
+  add("↶ Undo sending the card",()=>{ closeCard(); undo(); },"cancel");
+  modal.classList.add("on");
+}
 function sheet(n,u,msg,acts){
   const d=DB[n]||{}, box=document.getElementById("mbox"); box.className="sheet";
   box.innerHTML=`<div class="hd">${d.small?`<img src="${d.small}" alt="">`:""}<div><h3>${esc(n)}</h3>${msg?`<p>${esc(msg)}</p>`:""}</div></div>`;
@@ -1261,7 +1299,7 @@ function openPlayPile(k){
 
 document.getElementById("pNext").onclick=()=>{
   if(P.sel) return no("Finish picking cards first, or tap Cancel.");
-  if(P.owed) return no(OWE_MSG);
+  if(P.owed||P.lvOwed) return no(OWE_MSG);
   const h=Object.values(P.cards).filter(c=>c.where==="hand").length;
   if(h>6) return no(`You have ${h} cards in hand. Discard down to 6 before ending your turn.`);
   P.turn++; P.normalUsed=false; P.used={}; P.lock=null; P.grants=[]; setDropMode("normal");
@@ -1703,6 +1741,7 @@ function advanceTurn(C,force){
 }
 
 function loadLine(L,start=0,keep=false){
+  if(!keep) qReset();
   stop();
   for(const id in cardEls){ cardEls[id].remove(); delete cardEls[id]; }
   for(const k in INST) delete INST[k]; for(const k in INIT) delete INIT[k];
@@ -1738,20 +1777,11 @@ let rt; window.addEventListener("resize",()=>{ clearTimeout(rt); rt=setTimeout((
 
 (async function init(){
   layout(); makeCards(); render(0,false);
-  await loadDB();
-  applyImages(); applyPImages(); if(mode==="play") renderPlay(false);
-  const got=Object.keys(DB).length;
-  const st=document.getElementById("status");
-  st.textContent = got ? "" : "Couldn’t reach the card database. Tap here to try again.";
-  st.style.cursor = got ? "" : "pointer";
-  st.onclick = got ? null : async ()=>{
-    st.textContent="Loading card images…"; await loadDB();
-    applyImages(); applyPImages(); if(mode==="play") renderPlay(false); if(mode==="deck") buildDeck();
-    const ok=Object.keys(DB).length;
-    st.textContent = ok ? "" : "Still couldn’t reach the card database. Tap here to try again.";
-    if(ok){ st.onclick=null; st.style.cursor=""; }
-  };
-  if(mode==="deck") buildDeck();
+  await loadDB(); if(mode==="play") renderPlay(false); if(mode==="deck") buildDeck();
+  const st=document.getElementById("status"); st.textContent="Loading card pictures…";
+  const ok=await preloadImages();
+  applyImages(); applyPImages(); if(mode==="play") renderPlay(false); if(mode==="deck") buildDeck();
+  st.textContent = ok.some(Boolean) ? "" : "Card pictures couldn’t load on this connection. Everything else still works.";
 })();
 
 if("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(()=>{});
