@@ -566,7 +566,7 @@ function openCard(n,u){
   if(lvRow){ const bump=k=>{ c.lvMod=(c.lvMod||0)+k; renderPlay(); say(`${n} is now Level ${lvl(u)}.`); openCard(n,u); };
     document.getElementById("lvDn").onclick=()=>bump(-1); document.getElementById("lvUp").onclick=()=>bump(1); }
   document.getElementById("mClose").onclick=closeCard;
-  const mi=document.getElementById("mImg"); if(mi) mi.onclick=()=>bigCard(d.img,n);
+  const mi=document.getElementById("mImg"); if(mi){ const t0=Date.now(); mi.onclick=e=>{ e.stopPropagation(); if(Date.now()-t0>400) bigCard(d.img,n); }; }
   modal.classList.add("on");
 }
 function bigCard(src,n){
@@ -691,7 +691,7 @@ function pstat(){
   if(P.lock) s += ` · Extra Deck: ${P.lock.text} only`;
   const gtx=grantText(); if(gtx) s += ` · Waiting: ${gtx}`;
   document.getElementById("pstat").textContent=s;
-  const ow=document.getElementById("owe"); ow.classList.toggle("on",!!(P.owed||P.lvOwed)); ow.setAttribute("aria-label",(P.owed||P.lvOwed)?"Something still needs to be done":"");
+  const ow=document.getElementById("owe"); ow.classList.toggle("on",!!(P.owed||P.lvOwed||pendGY())); ow.setAttribute("aria-label",(P.owed||P.lvOwed)?"Something still needs to be done":"");
   document.getElementById("pBan").textContent=`Banished (${Object.values(P.cards).filter(c=>c.where==="ban").length})`;
 }
 
@@ -712,7 +712,7 @@ function place(u,where,o={}){
   const c=P.cards[u]; const i=P.deck.indexOf(u); if(i>=0) P.deck.splice(i,1);
   if(KIND[c.n]==="extra" && (where==="hand"||where==="deck")) where="extra";
   c.prev=c.where; c.where=where; c.t=++P.t;
-  if(!isZone(where)){ delete c.pos; c.lvMod=0; delete c.placedTurn; delete c.posTurn; }
+  if(!isZone(where)){ delete c.pos; c.lvMod=0; delete c.placedTurn; delete c.posTurn; delete c.toGY; }
   if(where==="extra") delete c.proper;
   if(where==="deck") P.deck.splice(Math.floor(Math.random()*(P.deck.length+1)),0,u);
   Object.assign(c,o);
@@ -901,6 +901,7 @@ function effectsOf(n){
 }
 const locOf=w=> w==="hand"||w==="gy"||w==="deck"||w==="ban"||w==="extra" ? w : isZone(w)? "field" : w;
 const OWE_MSG="Something still needs to be done before you can make another move. Look back at the card you just used.";
+function pendGY(){ return Object.keys(P.cards).some(k=>P.cards[k].toGY && isZone(P.cards[k].where)); }
 function owe(u,e){ const c=e.cost; P.owed={u,src:P.cards[u].n,act:c.act,self:c.self,left:c.need,phrase:c.phrase,from:c.from,to:c.to,other:/^other\b/i.test(c.phrase),mon:!!c.mon}; }
 function pays(u,dest){
   const o=P.owed; if(!o||dest!==o.to) return false;
@@ -1052,8 +1053,6 @@ function startSynchro(u,zone){
   if(P.lock && !matchWords(c.n,P.lock.words)) return no(`You used ${P.lock.src}’s effect, so you can only Special Summon ${P.lock.text} monsters from the Extra Deck this turn.`);
   const faceUp=monsters().filter(m=>P.cards[m].pos!=="set");
   if(faceUp.length<2) return no("A Synchro Summon needs a Tuner and at least one other face-up monster on your field.");
-  if(zone && occ(zone)) return no("That zone already has a card in it.");
-  if(zone && EMZ.includes(zone) && EMZ.some(z=>z!==zone && occ(z))) return no("You can only use one Extra Monster Zone.");
   P.synZone=zone||null; startSynchroSelect(u, d);
 }
 function startSynchroSelect(u,d){
@@ -1075,11 +1074,14 @@ function finishSynchro(u,mats){
   const lv=mats.map(lvl);
   if(d && d.level && lv.every(x=>x!=null)){ const sum=lv.reduce((a,b)=>a+b,0);
     if(sum!==d.level) return no(`Those materials add up to Level ${sum}, but ${n} is Level ${d.level}. They have to match exactly.`); }
-  endSelect();
-  mats.forEach(m=>place(m,"gy"));
-  const want=P.synZone; P.synZone=null;
-  const z = want && !occ(want) ? want : !EMZ.some(occ) ? "emzL" : freeMZ();
+  const occX=k=>{ const o=occ(k); return o && !mats.includes(o); };
+  const want=P.synZone;
+  const wantOK = want && !occX(want) && !(EMZ.includes(want) && EMZ.some(z=>z!==want && occX(z)));
+  const freeX=()=>MZ.find(k=>!occX(k));
+  const z = wantOK ? want : !EMZ.some(occX) ? "emzL" : freeX();
   if(!z) return no("You have no open zone for that monster.");
+  endSelect(); P.synZone=null;
+  mats.forEach(m=>place(m,"gy"));
   place(u,z,{pos:"atk",placedTurn:P.turn,proper:true});
   say(`Synchro Summoned ${n} using ${mats.map(m=>P.cards[m].n).join(", ")}.`);
   renderPlay(); setTimeout(()=>fx(z,"Synchro Summon"),350);
@@ -1088,7 +1090,7 @@ function finishSynchro(u,mats){
 // ---- Spells & Traps ----
 function resolveLater(u){
   const c=P.cards[u], st=subType(c.n)||"Normal";
-  if(["Normal","Quick-Play","Ritual","Counter"].includes(st)) setTimeout(()=>{ if(isZone(P.cards[u].where)){ restoring=true; place(u,"gy"); renderPlay(); restoring=false; lastState=ser(); } },1200);
+  if(["Normal","Quick-Play","Ritual","Counter"].includes(st)) P.cards[u].toGY=true;
   return st;
 }
 function stCost(u){ const e=effectsOf(P.cards[u].n).find(e=>!e.locs); if(e&&e.cost) owe(u,e); }
@@ -1107,7 +1109,7 @@ function tryActivate(u,zone){
     else place(u,zone||freeSZ(),{pos:"up",placedTurn:P.turn});
     resolveLater(u); stCost(u);
     const gt=grantFrom(c.n);
-    say(`Activated ${c.n}. Apply its effect by moving the cards yourself.${["Normal","Quick-Play","Ritual"].includes(st)?" It goes to the GY once it resolves.":""}${gt}`);
+    say(`Activated ${c.n}. Apply its effect by moving the cards yourself.${["Normal","Quick-Play","Ritual"].includes(st)?" When you’re done with its effect, drag it to your GY.":""}${gt}`);
     renderPlay();
   });
 }
