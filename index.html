@@ -160,6 +160,7 @@ body.playing .owe{display:inline-block}
 .sheet .wn{font-size:14px;line-height:1.4;background:#fff;border:1px solid rgba(168,116,31,.35);border-radius:8px;padding:8px 10px}
 .sheet .wn.best{border-color:var(--gold);box-shadow:0 0 0 1px var(--gold) inset}
 .sheet .wn ul{margin:4px 0 0;padding-left:18px}.sheet .wn li{margin:3px 0}
+.sheet ol.bp{margin:0;padding-left:22px}.sheet ol.bp li{margin:5px 0}
 .sheet .wnote{font-size:12px;color:var(--mute);margin:0}
 .sheet h3{font-family:var(--display);color:var(--gold);margin:0;font-size:16px}
 .sheet .hd p{margin:2px 0 0;font-size:13px;color:var(--mute)}
@@ -210,7 +211,7 @@ body.playing .owe{display:inline-block}
       <div id="playCtrls" style="display:none" class="panel">
         <div id="selBar" class="selbar" style="display:none"><p id="selT"></p>
           <div class="ctrls"><button id="selOk" class="primary">Confirm</button><button id="selNo">Cancel</button></div></div>
-        <div class="ctrls"><button id="pNext" class="primary">End turn</button><button id="pUndo" disabled>↶ Undo</button><button id="pBan">Banished (0)</button><button id="pNew">New duel</button><button id="pWhat">💡 What now?</button></div>
+        <div class="ctrls"><button id="pNext" class="primary">End turn</button><button id="pUndo" disabled>↶ Undo</button><button id="pBan">Banished (0)</button><button id="pNew">New duel</button><button id="pWhat">💡 What now?</button><button id="pBest">🧠 Best play</button></div>
         <div class="pstat" id="pstat"></div>
         <div class="dmode" id="dmode">Play cards as:
           <button data-m="normal" class="on">Normal Summon</button><button data-m="set">Set</button><button data-m="spa">Special ATK</button><button data-m="spd">Special DEF</button></div>
@@ -935,6 +936,382 @@ function effectsHere(u){
 }
 
 
+// ---- "Best play": searches lines with the real card effects (solver) ----
+// Crimson Powerforce combo search: plays out lines with the real card effects and keeps the best end board.
+const SV=(()=>{
+const C={ // name: [Level, Tuner, Attribute, kind]   kind m = Main Deck monster, x = Extra Deck, s = Spell, t = Trap
+ "Synkron Resonator":[1,1,"D","m"],"Red Resonator":[2,1,"F","m"],"Crimson Resonator":[2,1,"D","m"],"Vision Resonator":[2,1,"D","m"],
+ "Red Lotus King, Flame Crime":[3,0,"F","m"],"Creation Resonator":[3,1,"W","m"],"Soul Resonator":[3,1,"F","m"],
+ "Wandering King Wildwind":[4,0,"D","m"],"Bone Archfiend":[4,0,"D","m"],
+ "Resonator Call":[0,0,"","s"],"Crimson Gaia":[0,0,"","s"],"Resonator Command":[0,0,"","s"],"Absolute Powerforce":[0,0,"","s"],
+ "Red Reign":[0,0,"","t"],"Fiendish Golem":[0,0,"","t"],"Fiendish Chain":[0,0,"","t"],"Red Zone":[0,0,"","t"],
+ "Red Rising Dragon":[6,0,"D","x"],"Kuibelt the Blade Dragon":[7,0,"D","x"],"Red Dragon Archfiend":[8,0,"D","x"],
+ "Scarred Dragon Archfiend":[8,0,"D","x"],"Hot Red Dragon Archfiend Abyss":[9,0,"D","x"],"Hot Red Dragon Archfiend Bane":[10,0,"D","x"],"Red Nova Dragon":[12,0,"D","x"]};
+const DECK={"Synkron Resonator":3,"Red Resonator":3,"Crimson Resonator":3,"Vision Resonator":1,"Red Lotus King, Flame Crime":3,"Creation Resonator":1,
+ "Soul Resonator":3,"Wandering King Wildwind":3,"Bone Archfiend":3,"Resonator Call":3,"Crimson Gaia":2,"Resonator Command":2,"Absolute Powerforce":2,
+ "Red Reign":2,"Fiendish Golem":2,"Fiendish Chain":2,"Red Zone":2};
+const EXTRA={"Red Rising Dragon":2,"Kuibelt the Blade Dragon":1,"Red Dragon Archfiend":1,"Scarred Dragon Archfiend":1,"Hot Red Dragon Archfiend Abyss":1,"Hot Red Dragon Archfiend Bane":1,"Red Nova Dragon":1};
+const RDA="Red Dragon Archfiend", SCAR="Scarred Dragon Archfiend", RRD="Red Rising Dragon", ABY="Hot Red Dragon Archfiend Abyss", BANE="Hot Red Dragon Archfiend Bane", NOVA="Red Nova Dragon";
+const kind=n=>C[n][3], tun=n=>!!C[n][1], isMon=n=>kind(n)==="m", isEx=n=>kind(n)==="x", dark=n=>C[n][2]==="D";
+const isRes=n=>isMon(n)&&/Resonator/.test(n);
+const MENTIONS=["Soul Resonator","Vision Resonator","Absolute Powerforce","Fiendish Golem","Red Zone"];      // Main Deck cards that mention Red Dragon Archfiend
+const VIS_ST=["Crimson Gaia","Absolute Powerforce","Fiendish Golem","Red Zone"];                              // Spells/Traps that mention it
+const RDA_MON=[RDA,SCAR,ABY,BANE];                                                                              // "Red Dragon Archfiend" monsters (Scarred by name)
+const base=n=>n.replace(/^~/,"");
+const DEAD_ORDER=["Fiendish Golem","Red Zone","Fiendish Chain","Red Reign","Absolute Powerforce"];   // dead in the combo; best to add first
+const pickST=list=>{ const live=list.filter(n=>!DEAD_ORDER.includes(n)), dead=DEAD_ORDER.filter(n=>list.includes(n)); return dead.length? live.concat(dead[0]) : live; };
+const uniq=a=>[...new Set(a)];
+const rm1=(a,x)=>{ const i=a.indexOf(x); if(i>=0) a.splice(i,1); return a; };
+
+function clone(s){ return {h:s.h.slice(),d:{...s.d},g:s.g.slice(),b:s.b.slice(),m:s.m.map(x=>({...x})),st:s.st.slice(),fs:s.fs,x:{...s.x},ns:s.ns,o:{...s.o},steps:s.steps.slice()}; }
+const ID={}; Object.keys(C).forEach((n,i)=>{ ID[n]=String.fromCharCode(65+i); ID["~"+n]=String.fromCharCode(97+i); });
+const DN=Object.keys(DECK), XN=Object.keys(EXTRA), FL=["soul1","soul2","scar","lotus1","lotus3","vision2","reign","crim1","crim2","ssSynk","ssVis","bone1","bone2","gaia","command","bane","rrd2"];
+const enc=a=>a.map(n=>ID[n]).sort().join("");
+function key(s){ let k=enc(s.h)+"|"+enc(s.g)+"|"+s.m.map(x=>ID[x.n]+x.lv).sort().join("")+"|"+enc(s.st)+"|"+(s.fs?1:0)+s.ns+"|";
+  for(const n of DN) k+=s.d[n]||0; k+="|"; for(const n of XN) k+=s.x[n]||0; k+="|"; for(const f of FL) k+=s.o[f]?1:0; return k; }
+const mains=s=>s.m.filter(x=>!isEx(x.n)).length;
+const roomMain=(s,k=1)=>mains(s)+k<=5 && s.m.length+k<=6;
+const roomEx=s=>s.m.length<6;
+const lv=x=>x.lv;
+const say=(s,t)=>{ s.steps.push(t); return s; };
+const deckTake=(s,n)=>{ if(!s.d[n]) return false; s.d[n]--; return true; };
+const gyHas=(s,n)=>s.g.some(g=>base(g)===n);
+const gyTake=(s,n)=>{ let i=s.g.indexOf(n); if(i<0) i=s.g.indexOf("~"+n); if(i<0) return false; s.g.splice(i,1); return true; };
+
+// ---- triggers that happen after a move; each one branches into "use it" (with each choice) or "skip it" ----
+function resolve(s,q){
+  if(!q.length) return [s];
+  const [t,...rest]=q, out=[];
+  const go=(s2,more)=>{ for(const r of resolve(s2,(more||[]).concat(rest))) out.push(r); };
+  if(!["soul","synk","vision","reign","lotus","rrd"].includes(t) || !canUse(s,t)) go(s);   // skipping these never helps, so only branch when they can't be used
+  if(t==="red" && roomMain(s)){
+    for(const n of uniq(s.h.filter(isMon))){ const s2=clone(s); rm1(s2.h,n); s2.m.push({n,lv:C[n][0]}); say(s2,`Red Resonator’s effect: Special Summon ${n} from your hand.`); go(s2,n==="Soul Resonator"?["soul"]:[]); }
+  }
+  if(t==="soul" && !s.o.soul1){
+    for(const n of Object.keys(s.d).filter(n=>s.d[n] && isMon(n) && n!=="Soul Resonator")){ const s2=clone(s); s2.o.soul1=1; deckTake(s2,n); s2.h.push(n); say(s2,`Soul Resonator’s effect: add ${n} from your Deck to your hand.`); go(s2); }
+  }
+  if(t==="synk"){
+    for(const n of uniq(s.g.map(base).filter(n=>isRes(n)&&n!=="Synkron Resonator"))){ const s2=clone(s); gyTake(s2,n); s2.h.push(n); say(s2,`Synkron Resonator’s effect: add ${n} from your GY to your hand.`); go(s2); }
+  }
+  if(t==="scar" && !s.o.scar && s.x[RDA] && roomEx(s)){
+    const s2=clone(s); s2.o.scar=1; s2.x[RDA]--; s2.m.push({n:RDA,lv:8,p:1}); say(s2,`Scarred Dragon Archfiend’s effect: Special Summon Red Dragon Archfiend from your Extra Deck (it counts as a Synchro Summon).`); go(s2,["reign"]);
+  }
+  if(t==="lotus" && !s.o.lotus3 && s.d["Red Reign"]){
+    const s2=clone(s); s2.o.lotus3=1; deckTake(s2,"Red Reign"); s2.g.push("Red Reign"); say(s2,`Red Lotus King’s effect: send Red Reign from your Deck to the GY.`); go(s2);
+  }
+  if(t==="vision" && !s.o.vision2){
+    for(const n of pickST(VIS_ST.filter(n=>s.d[n]))){ const s2=clone(s); s2.o.vision2=1; deckTake(s2,n); s2.h.push(n); say(s2,`Vision Resonator’s effect: add ${n} from your Deck to your hand.`); go(s2); }
+  }
+  if(t==="rrd" && roomMain(s)){
+    for(const n of uniq(s.g.map(base).filter(isRes))){ const s2=clone(s); gyTake(s2,n); s2.m.push({n,lv:C[n][0]}); say(s2,`Red Rising Dragon’s effect: Special Summon ${n} from your GY.`); go(s2,n==="Soul Resonator"?["soul"]:[]); }
+  }
+  if(t==="reign" && !s.o.reign && gyHas(s,"Red Reign")){
+    const s2=clone(s); s2.o.reign=1; gyTake(s2,"Red Reign"); s2.h.push("Red Reign"); say(s2,`Red Reign’s effect: add it from your GY to your hand.`); go(s2);
+  }
+  return out;
+}
+function canUse(s,t){
+  if(t==="soul") return !s.o.soul1 && Object.keys(s.d).some(n=>s.d[n]&&isMon(n)&&n!=="Soul Resonator");
+  if(t==="synk") return s.g.some(g=>isRes(base(g))&&base(g)!=="Synkron Resonator");
+  if(t==="vision") return !s.o.vision2 && VIS_ST.some(n=>s.d[n]);
+  if(t==="reign") return !s.o.reign && gyHas(s,"Red Reign");
+  if(t==="lotus") return !s.o.lotus3 && !!s.d["Red Reign"];
+  if(t==="rrd") return roomMain(s) && s.g.some(g=>isRes(base(g)));
+  return false;
+}
+// what a card leaving the field / going to the GY sets off
+function sentTrig(n,fromField,asMat){
+  const t=[];
+  if(n==="Synkron Resonator" && fromField) t.push("synk");
+  if(n===SCAR && fromField) t.push("scar");
+  if(n==="Red Lotus King, Flame Crime" && asMat) t.push("lotus");
+  if(n==="Vision Resonator") t.push("vision");
+  return t;
+}
+const toGY=(s,n)=>s.g.push(n);
+
+// ---- Synchro material check ----
+function synOK(n,mats){
+  const sum=mats.reduce((a,x)=>a+x.lv,0); if(sum!==C[n][0]) return false;
+  const tuners=mats.filter(x=>tun(x.n));
+  if(n===NOVA){ if(mats.length!==3) return false; const rd=mats.filter(x=>x.n===RDA||x.n===SCAR); return rd.length===1 && mats.filter(x=>x!==rd[0]).every(x=>tun(x.n)); }
+  if(n===ABY||n===BANE) return mats.length===2 && mats.some((t,i)=>tun(t.n) && isEx(mats[1-i].n));
+  if(mats.length<2 || !tuners.length) return false;
+  return mats.some(t=>tun(t.n) && (n!==SCAR || mats.every(x=>x===t||dark(x.n))));   // pick one Tuner; for Scarred the rest must be DARK
+}
+const SUBS=[]; for(let k=0;k<=6;k++) SUBS[k]=null;
+function subsets(arr){ const out=[]; const n=arr.length; for(let mask=1;mask<(1<<n);mask++){ const s=[]; for(let i=0;i<n;i++) if(mask&(1<<i)) s.push(i); if(s.length>=2) out.push(s); } return out; }
+
+// ---- every move available right now ----
+function moves(s){
+  const out=[], add=(s2,trig)=>{ for(const r of resolve(s2,trig||[])) out.push(r); };
+  const handM=uniq(s.h.filter(isMon)), fieldN=s.m.map(x=>x.n), anySyn=s.m.some(x=>isEx(x.n)), fTun=s.m.some(x=>isMon(x.n)&&tun(x.n));
+  // Normal Summon
+  if(!s.ns && roomMain(s)) for(const n of handM){ const s2=clone(s); s2.ns=1; rm1(s2.h,n); s2.m.push({n,lv:C[n][0]}); say(s2,`Normal Summon ${n}.`); add(s2,n==="Red Resonator"?["red"]:n==="Soul Resonator"?["soul"]:[]); }
+  // Special Summons from the hand with the card's own effect
+  const ss=(n,why,flag)=>{ if(!s.h.includes(n)||!roomMain(s)) return; if(flag&&s.o[flag]) return; const s2=clone(s); if(flag) s2.o[flag]=1; rm1(s2.h,n); s2.m.push({n,lv:C[n][0]}); say(s2,`Special Summon ${n} from your hand (${why}).`); add(s2); };
+  if(anySyn) ss("Synkron Resonator","a Synchro Monster is on the field","ssSynk");
+  if(!s.m.length) ss("Crimson Resonator","you control no monsters","crim1");
+  if(s.m.some(x=>x.lv>=5&&dark(x.n))) ss("Vision Resonator","a Level 5 or higher DARK monster is on the field","ssVis");
+  if(fTun) ss("Red Lotus King, Flame Crime","you control a Fiend Tuner","lotus1");
+  if(s.m.some(x=>isEx(x.n)&&x.lv>=8)) ss("Creation Resonator","you control a Level 8 or higher Synchro Monster");
+  if(fTun) ss("Wandering King Wildwind","you control a Fiend Tuner with 1500 or less ATK");
+  // Bone Archfiend from hand or GY: send 1 other card from hand or field
+  if(!s.o.bone1) for(const from of ["hand","gy"]){
+    if(from==="hand"? !s.h.includes("Bone Archfiend") : !gyHas(s,"Bone Archfiend")) continue;
+    const costs=[];
+    const h2=s.h.slice(); if(from==="hand") rm1(h2,"Bone Archfiend");
+    const deadH=DEAD_ORDER.filter(n=>h2.includes(n)), keepDead=uniq([deadH.includes("Red Reign")?"Red Reign":null, deadH.filter(n=>n!=="Red Reign").pop()||null].filter(Boolean));
+    uniq(h2).filter(n=>!DEAD_ORDER.includes(n)||keepDead.includes(n)).forEach(n=>costs.push(["h",n])); s.m.forEach((x,i)=>costs.push(["m",i])); uniq(s.st).forEach(n=>costs.push(["st",n]));
+    const seenM=new Set();
+    for(const [w,v] of costs){
+      if(w==="m"){ const sig=s.m[v].n+s.m[v].lv; if(seenM.has(sig)) continue; seenM.add(sig); }
+      const s2=clone(s); s2.o.bone1=1; let cn, trig=[];
+      if(w==="h"){ cn=v; rm1(s2.h,v); toGY(s2,v); trig=sentTrig(v,false,false); }
+      else if(w==="m"){ cn=s2.m[v].n; s2.m.splice(v,1); s2.g.push(cn); trig=sentTrig(cn,true,false); }
+      else { cn=v; rm1(s2.st,v); s2.g.push(v); }
+      if(!roomMain(s2)) continue;
+      if(from==="hand") rm1(s2.h,"Bone Archfiend"); else gyTake(s2,"Bone Archfiend");
+      s2.m.push({n:"Bone Archfiend",lv:4});
+      say(s2,`Special Summon Bone Archfiend from your ${from==="hand"?"hand":"GY"} by sending ${cn} from your ${w==="h"?"hand":"field"} to the GY.`);
+      add(s2,trig);
+    }
+  }
+  // Crimson Resonator on the field: up to 2 Resonators from hand or Deck
+  if(!s.o.crim2 && fieldN.includes("Crimson Resonator") && s.m.length===2 && s.m.some(x=>isEx(x.n))){
+    const pool=[]; uniq(s.h.filter(n=>isRes(n)&&n!=="Crimson Resonator")).forEach(n=>{ pool.push(["h",n]); if(s.h.filter(x=>x===n).length>1) pool.push(["h",n]); });
+    Object.keys(s.d).filter(n=>s.d[n]&&isRes(n)&&n!=="Crimson Resonator").forEach(n=>{ pool.push(["d",n]); if(s.d[n]>1) pool.push(["d",n]); });
+    const seen=new Set();
+    for(let i=0;i<pool.length;i++) for(let j=i;j<=pool.length;j++){
+      if(j===i) continue; const pick=j===pool.length? [pool[i]] : [pool[i],pool[j]];
+      const sig=pick.map(p=>p.join(":")).sort().join("+"); if(seen.has(sig)) continue; seen.add(sig);
+      const s2=clone(s); if(!roomMain(s2,pick.length)) continue; s2.o.crim2=1; let ok=true, trig=[];
+      for(const [w,n] of pick){ if(w==="h"){ if(!s2.h.includes(n)) ok=false; rm1(s2.h,n); } else if(!deckTake(s2,n)) ok=false; s2.m.push({n,lv:C[n][0]}); if(n==="Soul Resonator") trig.push("soul"); }
+      if(!ok) continue;
+      say(s2,`Crimson Resonator’s effect: Special Summon ${pick.map(([w,n])=>`${n} from your ${w==="h"?"hand":"Deck"}`).join(" and ")}.`);
+      add(s2,trig);
+    }
+  }
+  // Bone Archfiend on the field: send a Fiend Tuner from hand or Deck, Level ±1
+  if(!s.o.bone2 && fieldN.includes("Bone Archfiend")){
+    const tn=uniq([...s.h.filter(n=>isMon(n)&&tun(n)).map(n=>"h:"+n), ...Object.keys(s.d).filter(n=>s.d[n]&&isMon(n)&&tun(n)).map(n=>"d:"+n)]);
+    const seenT=new Set();
+    s.m.forEach((x,i)=>{ const sig=x.n+x.lv; if(seenT.has(sig)) return; seenT.add(sig);
+      for(const t of tn) for(const dl of [1,-1]){
+        if(x.lv+dl<1) continue;
+        const [w,n]=t.split(/:(.+)/); const s2=clone(s); s2.o.bone2=1;
+        if(w==="h") rm1(s2.h,n); else deckTake(s2,n); s2.g.push(n); s2.m[i].lv+=dl;
+        say(s2,`Bone Archfiend’s effect: send ${n} from your ${w==="h"?"hand":"Deck"} to the GY and make ${x.n} Level ${x.lv+dl}.`);
+        add(s2,sentTrig(n,false,false));
+      } });
+  }
+  // Spells
+  if(s.h.includes("Resonator Call") && s.st.length<5) for(const n of Object.keys(s.d).filter(n=>s.d[n]&&isRes(n))){
+    const s2=clone(s); rm1(s2.h,"Resonator Call"); s2.g.push("Resonator Call"); deckTake(s2,n); s2.h.push(n); say(s2,`Activate Resonator Call: add ${n} from your Deck to your hand.`); add(s2); }
+  const gaiaPicks=s2=>{ const d=pickST(MENTIONS.filter(n=>s2.d[n])), g=MENTIONS.filter(n=>gyHas(s2,n)&&!DEAD_ORDER.includes(n)); return uniq([...d.map(n=>"d:"+n), ...g.map(n=>"g:"+n)]); };
+  if(s.h.includes("Crimson Gaia") && !s.fs && !s.o.gaia) for(const p of gaiaPicks(s)){
+    const [w,n]=p.split(/:(.+)/); const s2=clone(s); rm1(s2.h,"Crimson Gaia"); s2.fs="Crimson Gaia"; s2.o.gaia=1; if(w==="d") deckTake(s2,n); else gyTake(s2,n); s2.h.push(n);
+    say(s2,`Activate Crimson Gaia and use its effect: add ${n} from your ${w==="d"?"Deck":"GY"} to your hand.`); add(s2); }
+  if(s.fs==="Crimson Gaia" && !s.o.gaia) for(const p of gaiaPicks(s)){
+    const [w,n]=p.split(/:(.+)/); const s2=clone(s); s2.o.gaia=1; if(w==="d") deckTake(s2,n); else gyTake(s2,n); s2.h.push(n);
+    say(s2,`Crimson Gaia’s effect: add ${n} from your ${w==="d"?"Deck":"GY"} to your hand.`); add(s2); }
+  if(s.h.includes("Resonator Command") && !s.o.command && s.st.length<5)
+    for(const dn of uniq(s.h.filter(isRes))) for(const n of Object.keys(s.d).filter(n=>s.d[n]&&isMon(n))){
+      const s2=clone(s); s2.o.command=1; rm1(s2.h,"Resonator Command"); s2.g.push("Resonator Command"); rm1(s2.h,dn); s2.g.push(dn); deckTake(s2,n); s2.h.push(n);
+      say(s2,`Activate Resonator Command: discard ${dn}, then add ${n} from your Deck to your hand.`); add(s2,sentTrig(dn,false,false)); }
+  // Bane: Tribute 1 monster, revive a "Red Dragon Archfiend" monster
+  if(!s.o.bane && fieldN.includes(BANE)){
+    const gyR=uniq(s.g.filter(g=>RDA_MON.includes(base(g))));
+    s.m.forEach((x,i)=>{ if(x.n===BANE) return;
+      for(const r of gyR){ const s2=clone(s); s2.o.bane=1; const tn=s2.m[i].n; s2.m.splice(i,1); s2.g.push(tn); gyTake(s2,base(r)); s2.m.push({n:base(r),lv:C[base(r)][0],p:1});
+        say(s2,`Bane’s effect: Tribute ${tn}, then Special Summon ${base(r)} from your GY.`); add(s2,sentTrig(tn,true,false)); } });
+  }
+  // GY effects that need a card sent on an earlier turn (marked ~)
+  if(s.g.includes("~Wandering King Wildwind")) for(const n of Object.keys(s.d).filter(n=>s.d[n]&&isMon(n)&&tun(n))){
+    const s2=clone(s); rm1(s2.g,"~Wandering King Wildwind"); s2.b.push("Wandering King Wildwind"); deckTake(s2,n); s2.h.push(n);
+    say(s2,`Banish Wandering King Wildwind from your GY: add ${n} from your Deck to your hand.`); add(s2); }
+  if(s.g.includes("~"+RRD) && !s.o.rrd2 && s.g.filter(g=>base(g)==="Synkron Resonator").length>=2 && roomMain(s,2)){
+    const s2=clone(s); s2.o.rrd2=1; rm1(s2.g,"~"+RRD); s2.b.push(RRD); gyTake(s2,"Synkron Resonator"); gyTake(s2,"Synkron Resonator"); s2.m.push({n:"Synkron Resonator",lv:1},{n:"Synkron Resonator",lv:1});
+    say(s2,`Banish Red Rising Dragon from your GY: Special Summon 2 Synkron Resonator from your GY.`); add(s2); }
+  // Synchro Summons
+  const subs=SUBS[s.m.length]||[], exs=XN.filter(n=>s.x[n]), seen=new Set();
+  for(const idx of subs){
+    let sum=0; for(const i of idx) sum+=s.m[i].lv;
+    if(sum<6||sum>12) continue;
+    for(const n of exs){
+      if(C[n][0]!==sum) continue;
+      const mats=idx.map(i=>s.m[i]); const sig=n+mats.map(x=>ID[x.n]+x.lv).sort().join(""); if(seen.has(sig)) continue;
+      if(!synOK(n,mats)) continue; seen.add(sig);
+      const s2=clone(s); s2.x[n]--; const trig=[];
+      idx.slice().sort((a,b)=>b-a).forEach(i=>{ const mn=s2.m[i].n; s2.m.splice(i,1); s2.g.push(mn); trig.push(...sentTrig(mn,true,true)); });
+      s2.m.push({n,lv:C[n][0],p:1});
+      say(s2,`Synchro Summon ${n} (Level ${C[n][0]}) using ${mats.map(x=>`${x.n} (Lv ${x.lv})`).join(" + ")}.`);
+      if(n===RRD) trig.push("rrd"); trig.push("reign");
+      add(s2,trig);
+    }
+  }
+  return out;
+}
+
+// ---- how good an end board is ----
+const VAL={[NOVA]:12,[ABY]:10,[BANE]:8,[SCAR]:7,[RDA]:6,"Kuibelt the Blade Dragon":5,[RRD]:4};
+function finish(s){
+  let mons=s.m.map(x=>x.n), notes=[];
+  if(mons.includes(RDA) && mons.length>1){
+    const soul=gyHas(s,"Soul Resonator") && !s.o.soul2;
+    if(soul) notes.push("In your End Phase, Red Dragon Archfiend tries to destroy your other monsters. Banish Soul Resonator from your GY to save them.");
+    else { notes.push("Heads up: in your End Phase, Red Dragon Archfiend destroys your other monsters, because they didn’t attack."); mons=[RDA]; }
+  }
+  let sc=0; mons.forEach(n=>sc+= VAL[n]!=null? VAL[n] : 0.4);
+  const rdaUp=mons.some(n=>n===RDA||n===SCAR||n===NOVA), lv8=mons.some(n=>isEx(n)&&C[n][0]>=8);
+  const TV={"Fiendish Golem":3,"Fiendish Chain":3,"Red Zone":rdaUp?3:1.5,"Red Reign":lv8?2.5:1,"Absolute Powerforce":rdaUp?0.6:0.2};
+  const free=5-s.st.length, sets=s.h.filter(n=>TV[n]!=null).sort((a,b)=>TV[b]-TV[a]).slice(0,free);
+  sets.forEach(n=>sc+=TV[n]);
+  sc+=0.3*s.h.filter(n=>!sets.includes(n)).length;
+  if(gyHas(s,"Wandering King Wildwind")) sc+=1.2;
+  if(gyHas(s,RRD) && s.g.filter(g=>base(g)==="Synkron Resonator").length>=2) sc+=2;
+  if(gyHas(s,"Soul Resonator") && !notes.length) sc+=0.8;
+  if(s.fs) sc+=1;
+  sc-=0.01*s.steps.length;
+  return {score:sc, sets, notes, board:mons};
+}
+
+// potential still in hand/field, used only to try promising moves first
+function prio(s){ let p=0; const f=s.m.map(x=>x.n);
+  p+= s.m.filter(x=>!isEx(x.n)).reduce((a,x)=>a+x.lv,0)*0.3 + s.m.filter(x=>isMon(x.n)&&tun(x.n)).length*0.8;
+  p+= s.h.filter(isMon).length*0.5; if(!s.ns && s.h.some(isMon)) p+=1;
+  return p; }
+function solve(start,opt={}){
+  const cap=opt.cap||150000, ms=opt.ms||1e9, t0=Date.now();
+  const seen=new Set(); let best=null, nodes=0, stopped=false;
+  const trace=[];
+  const consider=s=>{ const f=finish(s); if(!best||f.score>best.score){ best={...f,steps:s.steps.slice(),state:s}; trace.push([nodes,+f.score.toFixed(2)]); } };
+  const dfs=s=>{
+    if(stopped) return;
+    if(++nodes>cap || (nodes%500===0 && Date.now()-t0>ms)){ stopped=true; return; }
+    consider(s);
+    for(const s2 of moves(s)){ const k=key(s2); if(seen.has(k)) continue; seen.add(k); dfs(s2); if(stopped) return; }
+  };
+  seen.add(key(start)); dfs(start);
+  return {...best, nodes, complete:!stopped, trace};
+}
+// best-first: always expand the most promising state found so far
+function solveBF(start,opt={}){
+  const cap=opt.cap||20000, ms=opt.ms||1e9, t0=Date.now(), w=opt.w==null?1:opt.w;
+  const seen=new Set([key(start)]); let best=null, nodes=0; const trace=[];
+  const heap=[]; const push=(p,s)=>{ heap.push([p,s]); let i=heap.length-1; while(i>0){ const j=(i-1)>>1; if(heap[j][0]>=heap[i][0]) break; [heap[i],heap[j]]=[heap[j],heap[i]]; i=j; } };
+  const pop=()=>{ const top=heap[0], last=heap.pop(); if(heap.length){ heap[0]=last; let i=0; for(;;){ const l=2*i+1, r=l+1; let m=i; if(l<heap.length&&heap[l][0]>heap[m][0]) m=l; if(r<heap.length&&heap[r][0]>heap[m][0]) m=r; if(m===i) break; [heap[i],heap[m]]=[heap[m],heap[i]]; i=m; } } return top[1]; };
+  const ev=s=>{ const f=finish(s); if(!best||f.score>best.score){ best={...f,steps:s.steps.slice(),state:s}; trace.push([nodes,+f.score.toFixed(2)]); } return f.score; };
+  push(ev(start)+w*prio(start),start);
+  while(heap.length){
+    if(++nodes>cap || (nodes%300===0 && Date.now()-t0>ms)) break;
+    const s=pop();
+    for(const s2 of moves(s)){ const k=key(s2); if(seen.has(k)) continue; seen.add(k); push(ev(s2)+w*prio(s2),s2); }
+  }
+  return {...best,nodes,complete:!heap.length,trace};
+}
+function solveMix(start,opt={}){
+  const cap=opt.cap||20000, ms=opt.ms||1e9, t0=Date.now();
+  const a=solveBF(start,{cap:Math.round(cap*0.7),ms:ms*0.7,w:1});
+  const b=solve(start,{cap:Math.round(cap*0.3),ms:Math.max(50,ms-(Date.now()-t0))});
+  const r=b.score>a.score? b : a; return {...r,nodes:a.nodes+b.nodes,complete:a.complete||b.complete};
+}
+function fromHand(hand){
+  const d={...DECK}; hand.forEach(n=>d[n]--);
+  return {h:hand.slice(),d,g:[],b:[],m:[],st:[],fs:null,x:{...EXTRA},ns:0,o:{},steps:[]};
+}
+for(let k=0;k<=6;k++) SUBS[k]=subsets([...Array(k).keys()]);
+return {solve,solveBF,solveMix,fromHand,finish,moves,resolve,C,DECK,EXTRA};
+})();
+
+
+const OPTMAP={"Crimson Resonator":["crim1","crim2"],"Soul Resonator":["soul1","soul2"],"Red Lotus King, Flame Crime":["lotus1",null,"lotus3"],
+  "Bone Archfiend":["bone1","bone2"],"Crimson Gaia":["gaia"],"Hot Red Dragon Archfiend Bane":["bane"]};
+const HARDMAP={"Vision Resonator":"vision2","Scarred Dragon Archfiend":"scar","Resonator Command":"command","Red Reign":"reign"};
+function solverState(){
+  const at=w=>Object.keys(P.cards).filter(u=>P.cards[u].where===w).map(u=>P.cards[u].n);
+  const ok=n=>!!SV.C[n];
+  const s={h:at("hand").filter(ok),d:{},g:[],b:at("ban").filter(ok),m:[],st:[],fs:null,x:{},ns:P.normalUsed?1:0,o:{},steps:[]};
+  P.deck.forEach(u=>{ const n=P.cards[u].n; if(ok(n)) s.d[n]=(s.d[n]||0)+1; });
+  at("extra").forEach(n=>{ if(ok(n)) s.x[n]=(s.x[n]||0)+1; });
+  Object.keys(P.cards).forEach(u=>{ const c=P.cards[u]; if(!ok(c.n)) return;
+    if(c.where==="gy") s.g.push((c.gyTurn!=null && c.gyTurn<P.turn? "~":"")+c.n);
+    else if(isMonZone(c.where) && c.pos!=="set") s.m.push({n:c.n,lv:lvl(u)||SV.C[c.n][0],p:c.proper?1:0});
+    else if(SZ.includes(c.where)) s.st.push(c.n);
+    else if(c.where==="field") s.fs=c.n; });
+  const ord=(o,ref)=>{ const r={}; Object.keys(ref).forEach(n=>{ if(o[n]!=null) r[n]=o[n]; }); return r; };
+  s.d=ord(s.d,SV.DECK); s.x=ord(s.x,SV.EXTRA);   // same order as the saved answers, so steps read the same way
+  Object.keys(OPTMAP).forEach(n=>((P.usedE||{})[n]||[]).forEach(i=>{ const f=OPTMAP[n][i]; if(f) s.o[f]=1; }));
+  Object.keys(HARDMAP).forEach(n=>{ if((P.used||{})[n]) s.o[HARDMAP[n]]=1; });
+  if((P.used||{})["ss:Synkron Resonator"]) s.o.ssSynk=1;
+  if((P.used||{})["ss:Vision Resonator"]) s.o.ssVis=1;
+  return s;
+}
+// saved answers for opening hands (lines.json), replayed against the real hand so every step is checked
+let LINES=null, linesTried=false;
+const LDEAD=["Fiendish Golem","Red Zone","Fiendish Chain","Absolute Powerforce"];
+function loadLines(){ if(linesTried) return Promise.resolve(LINES); linesTried=true;
+  return fetch("lines.json").then(r=>r.ok?r.json():null).then(j=>LINES=j).catch(()=>null); }
+function unpack(i){ return LINES.steps[i]; }
+function replay(start,steps){
+  const norm=t=>LDEAD.reduce((x,n)=>x.split(n).join("#"),t);
+  let s=start, i=0;
+  while(i<steps.length){
+    const ms=SV.moves(s), n0=s.steps.length;
+    const fits=(m,f)=>{ const add=m.steps.slice(n0); return add.length && add.every((t,j)=>f(t)===f(steps[i+j]||"")); };
+    const best=f=>ms.filter(m=>fits(m,f)).sort((a,b)=>b.steps.length-a.steps.length)[0];
+    const hit=best(x=>x) || best(norm);
+    if(!hit) return null; i+=hit.steps.length-n0; s=hit;
+  }
+  return s;
+}
+function showBest(r,how){
+  const box=document.getElementById("mbox"); box.className="sheet";
+  const cnt={}; r.sets.forEach(n=>cnt[n]=(cnt[n]||0)+1);
+  const steps=r.steps||[], tr=r.sets.length? `Set ${listNames(Object.keys(cnt).map(n=>cnt[n]>1?`${cnt[n]} ${n}`:n))} before you end your turn.` : "";
+  box.innerHTML=`<div class="hd"><div><h3>Best play</h3><p>${esc(how)}</p></div></div>`+
+    (steps.length||tr? `<div class="wn best"><ol class="bp">${steps.map(t=>`<li>${esc(t)}</li>`).join("")}${tr?`<li>${esc(tr)}</li>`:""}</ol></div>`
+      : `<div class="wn best">There’s nothing useful left to do. End your turn.</div>`)+
+    `<div class="wn"><b>End board</b><br>${r.board.length? esc(listNames(r.board)) : "No monsters"}${r.sets.length? ", plus "+r.sets.length+" Set card"+(r.sets.length>1?"s":"") : ""}.`+
+    (r.notes.length? `<br>${r.notes.map(esc).join("<br>")}` : "")+`</div>`+
+    `<p class="wnote">Worked out with the real card effects. It doesn’t plan around your opponent’s interruptions.</p>`;
+  const b=document.createElement("button"); b.textContent="Close"; b.className="cancel"; b.onclick=closeCard; box.appendChild(b);
+  modal.classList.add("on");
+}
+function bestPlay(){
+  if(!P.cards) return;
+  if(P.owed||P.lvOwed) return no(OWE_MSG);
+  const start=solverState();
+  // effects your last move set off that you haven't used yet
+  let prevT=0; try{ if(hist.length) prevT=JSON.parse(hist[hist.length-1].s).t||0; }catch(e){}
+  const recent=Object.keys(P.cards).filter(u=>P.cards[u].t>prevT).map(u=>P.cards[u]), pend=[];
+  recent.forEach(c=>{
+    if(isMonZone(c.where)){ if(c.n==="Red Resonator" && c.nsTurn===P.turn) pend.push("red");
+      if(c.n==="Soul Resonator" && !start.o.soul1) pend.push("soul");
+      if(c.n==="Red Rising Dragon" && c.proper) pend.push("rrd"); }
+    if(c.where==="gy" && c.prev && isMonZone(c.prev)){ if(c.n==="Synkron Resonator") pend.push("synk"); if(c.n==="Scarred Dragon Archfiend") pend.push("scar");
+      if(c.n==="Red Lotus King, Flame Crime") pend.push("lotus"); }
+    if(c.where==="gy" && c.n==="Vision Resonator") pend.push("vision");
+  });
+  const box=document.getElementById("mbox"); box.className="sheet";
+  box.innerHTML=`<div class="hd"><div><h3>Best play</h3><p>Working it out…</p></div></div><div class="wn">Trying lines with your cards. This takes a few seconds.</div>`;
+  modal.classList.add("on");
+  const opening=P.turn===1 && !hist.length;
+  const live=()=>setTimeout(()=>{
+    const roots=pend.length? SV.resolve(start,pend) : [start]; let r=null, nodes=0, all=true;
+    roots.forEach(s0=>{ const x=SV.solveMix(s0,{cap:Math.round(40000/roots.length),ms:3500/roots.length}); nodes+=x.nodes; all=all&&x.complete; if(!r||x.score>r.score) r=x; });
+    r={...r,nodes,complete:all};
+    showBest(r, `From your current board. I tried ${r.nodes.toLocaleString()} positions${r.complete?" (every possible line)":""}.`); },60);
+  if(!opening) return live();
+  loadLines().then(L=>{
+    if(!L) return live();
+    const act=start.h.filter(n=>!LDEAD.includes(n)).sort(), key=act.map(n=>L.names.indexOf(n)).join(".");
+    const rec=L.lines[key]; if(!rec) return live();
+    const end=replay(start,rec.map(unpack)); if(!end) return live();
+    const f=SV.finish(end); showBest({...f,steps:end.steps},"Saved answer for this opening hand.");
+  });
+}
+
 // ---- "What now?": reads the current duel and lists the moves still open ----
 function fxUsed(n,re){
   const d=info(n), txt=d?d.desc:"";
@@ -1127,7 +1504,7 @@ function tryNormal(u,zone,set){
     endSelect(); tribs.forEach(t=>place(t,"gy"));
     const z = zone && !occ(zone) ? zone : freeMZ();
     if(!z) return no("All 5 of your Monster Zones are full.");
-    P.normalUsed=true; place(u,z,{pos:set?"set":"atk",placedTurn:P.turn}); setDropMode("spa");
+    P.normalUsed=true; place(u,z,{pos:set?"set":"atk",placedTurn:P.turn}); if(!set) P.cards[u].nsTurn=P.turn; setDropMode("spa");
     say(set? `Set ${c.n} face-down in Defense Position.` : `Normal Summoned ${c.n}${tribs.length?` by Tributing ${tribs.length} monster${tribs.length>1?"s":""}`:""}.`);
     renderPlay();
   };
@@ -1170,7 +1547,7 @@ function trySpecial(u,zone,pos,how){
       say(`Special Summoned ${c.n} from ${from} with its own effect, in ${pos==="atk"?"Attack":"Defense"} Position.${extra}${gt}`);
       renderPlay();
     };
-    return /You can only use (each effect|this effect) of/i.test(info(c.n).desc)? optCheck(c.n,go,own) : go();
+    return !way && /You can only use (each effect|this effect) of/i.test(info(c.n).desc)? optCheck(c.n,go,own) : go();
   }
   if(how==="other"){
     const g = grant || (src==="gy"? permCheck(u,"gy","field").g : (P.grants||[]).find(g=>g.dest==="field"&&(g.from||[]).includes("hand")&&g.except!==c.n&&fitsPhrase(c.n,g.phrase)));
@@ -1474,6 +1851,7 @@ document.getElementById("pNext").onclick=()=>{
 };
 document.getElementById("pNew").onclick=()=>newGame();
 document.getElementById("pWhat").onclick=whatNow;
+document.getElementById("pBest").onclick=bestPlay;
 document.getElementById("pBan").onclick=()=>openPlayPile("ban");
 
 // ===== Walkthrough builder: any opening hand, then as many turns as you like =====
